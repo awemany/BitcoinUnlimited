@@ -19,6 +19,8 @@
 #include "unlimited.h"
 #include "util.h"
 #include "utilstrencodings.h"
+#include "unlimited.h"
+#include "chainparams.h"
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/thread.hpp>

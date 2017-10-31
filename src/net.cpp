@@ -2911,7 +2911,8 @@ void CNode::BeginMessage(const char *pszCommand) EXCLUSIVE_LOCK_FUNCTION(cs_vSen
 {
     ENTER_CRITICAL_SECTION(cs_vSend);
     assert(ssSend.size() == 0);
-    const CMessageHeader::MessageStartChars *start = &Params().MessageStart();
+
+    const CMessageHeader::MessageStartChars *start = &GetMagic(Params());
     CMessageHeader::MessageStartChars temp;
     if (netMagic.value!=0)
         {

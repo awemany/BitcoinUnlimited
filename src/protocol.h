@@ -316,6 +316,8 @@ enum
     // collisions and other cases where nodes may be advertising a service they
     // do not actually support. Other service bits should be allocated via the
     // BIP process.
+
+    NODE_WEAKBLOCKS = (1<<24)
 };
 
 /** A CService with information about it as peer */

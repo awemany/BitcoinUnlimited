@@ -6324,7 +6324,17 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
         LOCK(cs_main);
         CNodeState *nodestate = State(pfrom->GetId());
         CBlockIndex *pindex = NULL;
-        if (locator.IsNull())
+
+        bool isWeak = false;
+        {
+            LOCK(cs_weakblocks);
+            isWeak = hash2weakblock.count(hashStop);
+        }
+
+        if (isWeak) LogPrint("net", "GETHEADERS request for weak block %s.\n", hashStop.ToString());
+
+        // weak block special handling as it is not part of the chainActive
+        if (locator.IsNull() || isWeak)
         {
             // If locator is null, return the hashStop block
             BlockMap::iterator mi = mapBlockIndex.find(hashStop);

@@ -22,10 +22,58 @@
 #include "txmempool.h"
 #include "util.h"
 #include "utiltime.h"
+#include "weakblock.h"
 
 using namespace std;
 
 static bool ReconstructBlock(CNode *pfrom, const bool fXVal, int &missingCount, int &unnecessaryCount);
+
+/*! Returns  the index into the weakblocks array if the block given as 'block' is a superset of that weak block. Returns a value
+  smaller than zero otherwise (no matching weak block found). */
+static int partOfLastWeak(const CBlock &block) {
+    LOCK(cs_weakblocks);
+    LogPrint("weakblocks", "Check whether block %s is delta on top of last or 2nd last weak block.\n", block.GetHash().GetHex());
+
+    if (!weakblocks.size()) {
+        LogPrint("weakblocks", "Currently no weak blocks -> Nope.\n");
+        return -1;
+    }
+
+    if (block.vtx.size() < 2) {
+        LogPrint("weakblocks", "Coinbase-transaction-only block -> Nope.\n");
+        return -1;
+    }
+
+    int result = weakblocks.size()-1;
+    CBlock *underlying = weakblocks[result];
+
+    if (underlying->GetHash() == block.GetHash()) {
+        LogPrint("weakblocks", "Block is identical to the last weak block -> comparing with next 2nd-last weak block.\n");
+        if (weakblocks.size() < 2) {
+            LogPrint("weakblocks", "No second weak block, so nope.\n");
+            return -1;
+        }
+        result--;
+        underlying = weakblocks[result];
+    }
+
+    if (block.vtx.size() < underlying->vtx.size()) {
+        LogPrint("weakblocks", "New block is smaller than latest weak block -> Nope.\n");
+        return -1;
+    }
+
+    // all except coinbase of the underlying must be included in the new block
+    for (size_t i = 1; i < underlying->vtx.size(); i++) {
+        if (block.vtx[i].GetHash() != underlying->vtx[i].GetHash()) {
+            LogPrint("weakblocks", "New block and latest weakblock differ at pos %d, new: %s, latest weak: %s\n",
+                     i, block.vtx[i].GetHash().GetHex(), underlying->vtx[i].GetHash().GetHex());
+            return -1;
+        }
+    }
+    LogPrint("weakblocks", "Yes, this block is containing all of the weak block's (%d:%d) transactions and in the same order.\n",
+             result, weakblocks.size());
+    return result;
+}
 
 CThinBlock::CThinBlock(const CBlock &block, CBloomFilter &filter)
 {
@@ -33,9 +81,42 @@ CThinBlock::CThinBlock(const CBlock &block, CBloomFilter &filter)
 
     unsigned int nTx = block.vtx.size();
     vTxHashes.reserve(nTx);
-    for (unsigned int i = 0; i < nTx; i++)
+
+    /* needs this lock so that the underlying block doesn't disappear from under us,
+       should there be a new strong block arriving. */
+    LOCK(cs_weakblocks);
+
+
+    // first transaction to check for inclusion
+    int txBegin =0;
+
+    int weak_idx = partOfLastWeak(block);
+
+    if (weak_idx >=0) {
+            CBlock *underlying = weakblocks[weak_idx];
+            LogPrint("weakblocks", "Detected block %s as a superset of weak block %s/%d. Creating deltathinblock.\n",
+                     block.GetHash().ToString(),
+                     underlying->GetHash().ToString(),
+                     weak_idx);
+
+            // FIXME: abuse of notation here: vTxHashes now also contains a _block_ hash at the first pos
+            vTxHashes.push_back(underlying->GetHash());
+
+            // next one is new coinbase, which is always missing
+            vTxHashes.push_back(block.vtx[0].GetHash());
+            vMissingTx.push_back(block.vtx[0]);
+
+            // and start with the rest that is missing, skip the underlying stuff
+            txBegin = underlying->vtx.size();
+    } else {
+        LogPrint("weakblocks", "Block is not a superset of the latest weak block.\n");
+    }
+
+    for (unsigned int i = txBegin; i < nTx; i++)
     {
         const uint256 &hash = block.vtx[i].GetHash();
+
+        // only include what's not in the underlying block in case of deltathin
         vTxHashes.push_back(hash);
 
         // Find the transactions that do not match the filter.
@@ -45,6 +126,8 @@ CThinBlock::CThinBlock(const CBlock &block, CBloomFilter &filter)
         if (!filter.contains(hash) || i == 0)
             vMissingTx.push_back(block.vtx[i]);
     }
+    LogPrint("thinblocks", "Done preparing thin block. This #txn: %d, missing: %d, all: %d\n",
+             vTxHashes.size(), vMissingTx.size(), nTx);
 }
 
 /**
@@ -137,6 +220,36 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
         fXVal = (header.hashPrevBlock == chainActive.Tip()->GetBlockHash()) ? true : false;
     }
 
+    // look at first entry of vTxHashes and see whether it is a
+    // known weak block hash (deltathinblock) - in that case replace
+    // vTxHashes with the blown up variant (just drop the coinbase).
+    {
+        LOCK(cs_weakblocks);
+        if (vTxHashes.size()>1 &&
+            hash2weakblock.count(vTxHashes[0]) > 0) {
+            LogPrint("weakblocks", "This is a deltathin block on top of weak block %s.\n", vTxHashes[0].GetHex());
+            CBlock *underlying = hash2weakblock[vTxHashes[0]];
+
+            std::vector<uint256> nhashes;
+
+            // 2nd to follow is coinbase of block on top
+            nhashes.push_back(vTxHashes[1]);
+
+            // reconstruct from underlying block
+            for (size_t i=1; i<underlying->vtx.size(); i++) {
+                const CTransaction& tx= underlying->vtx[i];
+                nhashes.push_back(tx.GetHash());
+            }
+            // and add the rest
+            for (size_t i=2; i<vTxHashes.size(); i++) {
+                nhashes.push_back(vTxHashes[i]);
+            }
+            vTxHashes = nhashes;
+        }
+    }
+    // FIXME: weakblocks: prevent banning of nodes if the reconstruction does not work out
+    // (unknown preceding weakblock on receiving end) and handle that case properly as well.
+
     thindata.ClearThinBlockData(pfrom);
     pfrom->nSizeThinBlock = nSizeThinBlock;
 
@@ -224,7 +337,10 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
 CXThinBlock::CXThinBlock(const CBlock &block, CBloomFilter *filter)
 {
     header = block.GetBlockHeader();
-    this->collision = false;
+
+    // prefer deltathinblock over xthin blocks if last weak block is a subset of this block
+    // (mark this one as colliding to avoid it)
+    this->collision = partOfLastWeak(block)>=0;
 
     unsigned int nTx = block.vtx.size();
     vTxHashes.reserve(nTx);
@@ -251,7 +367,10 @@ CXThinBlock::CXThinBlock(const CBlock &block, CBloomFilter *filter)
 CXThinBlock::CXThinBlock(const CBlock &block)
 {
     header = block.GetBlockHeader();
-    this->collision = false;
+    // prefer deltathinblock over xthin blocks if last weak block is a subset of this block
+    // (mark this one as colliding to avoid it)
+    this->collision = partOfLastWeak(block)>=0;
+
 
     unsigned int nTx = block.vtx.size();
     vTxHashes.reserve(nTx);

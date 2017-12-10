@@ -16,6 +16,8 @@
 #ifndef BITCOIN_CASH
 uint32_t GetNextWorkRequired(const CBlockIndex *pindexLast, const CBlockHeader *pblock, const Consensus::Params &params)
 {
+    return UintToArith256(uint256S("00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")).GetCompact();
+
     unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
 
     // Genesis block

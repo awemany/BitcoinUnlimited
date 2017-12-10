@@ -32,6 +32,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "setgenerate", 1 },
     { "generate", 0 },
     { "generate", 1 },
+    { "generate", 2 },
     { "generatetoaddress", 0 },
     { "generatetoaddress", 2 },
     { "getnetworkhashps", 0 },
@@ -106,6 +107,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "prioritisetransaction", 2 },
     { "setban", 2 },
     { "setban", 3 },
+    { "weakconfirmations", 1}
 };
 
 class CRPCConvertTable
@@ -165,4 +167,3 @@ UniValue RPCConvertValues(const std::string &strMethod, const std::vector<std::s
 
     return params;
 }
-

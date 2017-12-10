@@ -1,0 +1,64 @@
+// Copyright (c) 2010 Satoshi Nakamoto
+// Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include "rpc/server.h"
+#include "utilstrencodings.h"
+#include "weakblock.h"
+#include <univalue.h>
+
+using namespace std;
+
+UniValue weakstats(const UniValue& params, bool fHelp) {
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "weakstats\n"
+            "\nReturns weak block statistics.\n");
+
+    // FIXME: make the results nicer and more informative
+    UniValue result(UniValue::VOBJ);
+
+    LOCK(cs_weakblocks);
+
+    // order by receival time
+    for (const CBlock* pblock : weakblocks) {
+        result.push_back(Pair(pblock->GetHash().GetHex(),
+                              pblock->vtx.size()));
+    }
+    return result;
+}
+
+UniValue weakconfirmations(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1)
+        throw runtime_error(
+            "weakconfirmations \"hexstring\"\n"
+            "\nGives the number of weak block confirmation a transaction (refered to by txid) has received.\n"
+            "\nArguments:\n"
+            "1. \"hexstring\"    (string, required) The hex string of the TXID\n"
+            "\nResult:\n"
+            "\"num\"             (int) The number of weak block confirmations\n");
+
+
+    std::string txid_hex = params[0].get_str();
+
+    uint256 hash = ParseHashV(params[0], "parameter 1");
+
+    LOCK(cs_weakblocks);
+    return txid2weakblock.count(hash);
+}
+
+static const CRPCCommand commands[] =
+{ //  category              name                      actor (function)         okSafeMode
+  //  --------------------- ------------------------  -----------------------  ----------
+    { "weakblocks",         "weakconfirmations",      &weakconfirmations,      true  },
+    { "weakblocks",         "weakstats",              &weakstats,   true  },
+};
+
+void RegisterWeakBlockRPCCommands(CRPCTable &tableRPC)
+{
+    for (unsigned int vcidx = 0; vcidx < ARRAYLEN(commands); vcidx++)
+        tableRPC.appendCommand(commands[vcidx].name, &commands[vcidx]);
+}

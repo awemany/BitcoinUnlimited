@@ -1335,7 +1335,8 @@ bool TestConservativeBlockValidity(CValidationState &state,
     indexDummy.nHeight = pindexPrev->nHeight + 1;
 
     // NOTE: CheckBlockHeader is called by CheckBlock
-    if (!ContextualCheckBlockHeader(block, state, pindexPrev))
+    bool dummy = true;
+    if (!ContextualCheckBlockHeader(block, state, pindexPrev, &dummy))
         return false;
     if (!CheckBlock(block, state, fCheckPOW, fCheckMerkleRoot, true))
         return false;

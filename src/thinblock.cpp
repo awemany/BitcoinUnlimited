@@ -81,13 +81,17 @@ bool CThinBlock::HandleMessage(CDataStream &vRecv, CNode *pfrom)
         }
         CBlockIndex *pprev = mi->second;
         CValidationState state;
-        if (!ContextualCheckBlockHeader(thinBlock.header, state, pprev))
+
+        bool isWeak = true;
+
+        if (!ContextualCheckBlockHeader(thinBlock.header, state, pprev, &isWeak))
         {
             // Thin block does not fit within our blockchain
             dosMan.Misbehaving(pfrom, 100);
             return error(
                 "thinblock from peer %s contextual error: %s", pfrom->GetLogName(), state.GetRejectReason().c_str());
         }
+        LogPrint("weakblocks", "This block is weak: %d\n", isWeak);
     }
 
     CInv inv(MSG_BLOCK, thinBlock.header.GetHash());

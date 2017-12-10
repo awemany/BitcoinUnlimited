@@ -45,6 +45,7 @@
 #include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "versionbits.h"
+#include "weakblock.h"
 
 #include <algorithm>
 #include <boost/algorithm/hex.hpp>
@@ -3614,9 +3615,13 @@ bool CheckIndexAgainstCheckpoint(const CBlockIndex *pindexPrev,
     return true;
 }
 
-bool ContextualCheckBlockHeader(const CBlockHeader &block, CValidationState &state, CBlockIndex *const pindexPrev)
+bool ContextualCheckBlockHeader(const CBlockHeader &block, CValidationState &state, CBlockIndex *const pindexPrev, bool *pWeak)
 {
     const Consensus::Params &consensusParams = Params().GetConsensus();
+
+    *pWeak = (CheckProofOfWork(block.GetHash(), WeakBlockProofOfWork(block.nBits), Params().GetConsensus()) &&
+              !CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus()));
+
     // Check proof of work
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
         return state.DoS(100, error("%s: incorrect proof of work", __func__), REJECT_INVALID, "bad-diffbits");
@@ -3738,6 +3743,9 @@ bool AcceptBlockHeader(const CBlockHeader &block,
     // Check for duplicate
     uint256 hash = block.GetHash();
     CBlockIndex *pindex = NULL;
+
+    bool weak = true;
+
     if (hash != chainparams.GetConsensus().hashGenesisBlock)
     {
         BlockMap::iterator miSelf = mapBlockIndex.find(hash);
@@ -3772,7 +3780,7 @@ bool AcceptBlockHeader(const CBlockHeader &block,
         if (fCheckpointsEnabled && !CheckIndexAgainstCheckpoint(pindexPrev, state, chainparams, hash))
             return error("%s: CheckIndexAgainstCheckpoint(): %s", __func__, state.GetRejectReason().c_str());
 
-        if (!ContextualCheckBlockHeader(block, state, pindexPrev))
+        if (!ContextualCheckBlockHeader(block, state, pindexPrev, &weak))
             return false;
     }
     if (pindex == NULL)
@@ -4021,7 +4029,9 @@ bool TestBlockValidity(CValidationState &state,
     indexDummy.nHeight = pindexPrev->nHeight + 1;
 
     // NOTE: CheckBlockHeader is called by CheckBlock
-    if (!ContextualCheckBlockHeader(block, state, pindexPrev))
+
+    bool dummy = true;
+    if (!ContextualCheckBlockHeader(block, state, pindexPrev, &dummy))
         return false;
     if (!CheckBlock(block, state, fCheckPOW, fCheckMerkleRoot))
         return false;

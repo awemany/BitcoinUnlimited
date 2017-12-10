@@ -4,6 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "arith_uint256.h"
 #include "chainparams.h"
 #include "consensus/merkle.h"
 
@@ -394,10 +395,17 @@ public:
         nDefaultPort = DEFAULT_REGTESTNET_PORT;
         nPruneAfterHeight = 1000;
 
-        genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, 50 * COIN);
+        uint32_t i=44097;
+        arith_uint256 limit=UintToArith256(uint256S("0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
+        do {
+            i++;
+            genesis = CreateGenesisBlock(1296688602, i, 0x2000ffff, 1, 50 * COIN);
+        } while (UintToArith256(genesis.GetHash()) > limit);
+        //printf("XX %d %s\n", i, genesis.GetHash().GetHex().c_str());
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock ==
-               uint256S("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"));
+               uint256S("00000aecf1ff7b2c08ea79690fa356efb9b704b2020665e84ef773de16149d81"));
+
         assert(
             genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
 
@@ -411,7 +419,7 @@ public:
         fTestnetToBeDeprecatedFieldRPC = false;
 
         checkpointData = (CCheckpointData){
-            boost::assign::map_list_of(0, uint256S("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206")),
+            boost::assign::map_list_of(0, uint256S("00000aecf1ff7b2c08ea79690fa356efb9b704b2020665e84ef773de16149d81")),
             0, 0, 0};
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 111);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 196);

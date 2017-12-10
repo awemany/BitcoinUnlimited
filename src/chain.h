@@ -142,9 +142,10 @@ enum BlockStatus : uint32_t
 
     BLOCK_EXCESSIVE = 32, // BU: This block is bigger than what we really want to accept.
 
-    BLOCK_FAILED_VALID = 64, //! stage after last reached validness failed
-    BLOCK_FAILED_CHILD = 128, //! descends from failed block
-    BLOCK_FAILED_MASK = BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD,
+    BLOCK_FAILED_VALID       =   64, //! stage after last reached validness failed
+    BLOCK_FAILED_CHILD       =   128, //! descends from failed block
+    BLOCK_WEAK               =   256, //! block is weak (only reaching weak difficulty target)
+    BLOCK_FAILED_MASK        =   BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD,
 };
 
 /** The block chain is a tree shaped structure starting with the

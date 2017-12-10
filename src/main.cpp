@@ -3866,6 +3866,35 @@ static bool AcceptBlock(const CBlock &block,
 
     int nHeight = pindex->nHeight;
 
+    // special handling of weak blocks
+    if (pindex->nStatus & BLOCK_WEAK) {
+        LOCK(cs_weakblocks);
+        uint256 blockhash = block.GetHash();
+
+        CBlock *weakblock = new CBlock(block);
+        weakblocks.push_back(weakblock);
+        hash2weakblock[blockhash] = weakblock;
+        for (const CTransaction& txid : block.vtx) {
+            txid2weakblock.insert(std::pair<uint256, CBlock*>(txid.GetHash(), weakblock));
+        }
+        LogPrint("weakblocks", "Dealt with weak block of %d transactions. Now sending out.\n", weakblock->vtx.size());
+        // forward weak block
+        BOOST_FOREACH (CNode *pnode, vNodes)
+        {
+            pnode->PushBlockHash(blockhash);
+        }
+    } else {
+        LogPrint("weakblocks", "Strong block came in - clearing all weak blocks.\n");
+        LOCK(cs_weakblocks);
+        for (CBlock* block : weakblocks) {
+            // FIXME: disconnect from indices?
+            delete block;
+        }
+        txid2weakblock.clear();
+        hash2weakblock.clear();
+        weakblocks.clear();
+    }
+
     // Write block to history file
     try
     {

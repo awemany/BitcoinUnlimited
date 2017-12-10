@@ -3247,6 +3247,9 @@ CBlockIndex *FindMostWorkChain()
         // Was there an excessive block prior to our accept depth (if so we ignore the accept depth -- this chain has
         // already been accepted as valid)
         bool fOldExcessive = false;
+
+        bool fHasWeakBlock = false;
+
         // follow the chain all the way back to where it joins the current active chain.
         while (pindexTest && !chainActive.Contains(pindexTest))
         {
@@ -3269,7 +3272,9 @@ CBlockIndex *FindMostWorkChain()
                 fOldExcessive |= ((pindexTest->nStatus & BLOCK_EXCESSIVE) != 0);
             }
 
-            if (fFailedChain | fMissingData | fRecentExcessive)
+            fHasWeakBlock = pindexTest->nStatus & BLOCK_WEAK;
+
+            if (fFailedChain | fMissingData | fRecentExcessive | fHasWeakBlock)
                 break;
             pindexTest = pindexTest->pprev;
             depth++;
@@ -3303,7 +3308,7 @@ CBlockIndex *FindMostWorkChain()
         }
 
         // Conditions where we want to reject the chain
-        if (fFailedChain || fMissingData || (fRecentExcessive && !fOldExcessive))
+        if (fFailedChain || fMissingData || (fRecentExcessive && !fOldExcessive) || fHasWeakBlock)
         {
             // Candidate chain is not usable (either invalid or missing data)
             if (fFailedChain && (pindexBestInvalid == NULL || pindexNew->nChainWork > pindexBestInvalid->nChainWork))
@@ -4213,6 +4218,8 @@ bool AcceptBlockHeader(const CBlockHeader &block,
 
     bool weak = true;
 
+    CBlockIndex *pindexPrev = NULL;
+
     if (hash != chainparams.GetConsensus().hashGenesisBlock)
     {
         BlockMap::iterator miSelf = mapBlockIndex.find(hash);
@@ -4233,7 +4240,6 @@ bool AcceptBlockHeader(const CBlockHeader &block,
             return false;
 
         // Get prev block index
-        CBlockIndex *pindexPrev = NULL;
         BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
         if (mi == mapBlockIndex.end())
             return state.DoS(10, error("%s: previous block %s not found while accepting %s", __func__,
@@ -4250,8 +4256,17 @@ bool AcceptBlockHeader(const CBlockHeader &block,
         if (!ContextualCheckBlockHeader(block, state, pindexPrev, &weak))
             return false;
     }
-    if (pindex == NULL)
+    if (pindex == NULL) {
         pindex = AddToBlockIndex(block);
+        assert(pindex);
+        if (weak || (pindexPrev != NULL && (pindexPrev->nStatus & BLOCK_WEAK))) {
+            if (weak) LogPrint("weakblocks", "Block is weak. Mark it as such.\n");
+            else LogPrint("weakblocks", "Preceding block is weak. Mark this as weak as well.\n");
+            pindex->nStatus |= BLOCK_WEAK;
+        } else {
+            LogPrint("weakblocks", "Block is strong.\n");
+        }
+    }
 
     if (ppindex)
         *ppindex = pindex;

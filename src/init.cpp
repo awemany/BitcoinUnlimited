@@ -826,6 +826,11 @@ bool AppInit2(boost::thread_group &threadGroup, CScheduler &scheduler)
     nLocalServices |= NODE_BITCOIN_CASH;
 #endif
 
+    // support for receiving and sending weak blocks with less than
+    // full POW
+    if (GetBoolArg("-weakblocks", true))
+        nLocalServices |= NODE_WEAKBLOCKS;
+
     nMaxTipAge = GetArg("-maxtipage", DEFAULT_MAX_TIP_AGE);
 
     // xthin bloom filter limits

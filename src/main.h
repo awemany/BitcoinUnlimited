@@ -149,6 +149,7 @@ static const bool DEFAULT_TESTSAFEMODE = false;
 static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
 
 static const bool DEFAULT_PEERBLOOMFILTERS = true;
+static const bool DEFAULT_WEAKBLOCKS = true;
 
 struct BlockHasher
 {

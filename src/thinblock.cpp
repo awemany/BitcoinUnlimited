@@ -1533,7 +1533,7 @@ void AddThinBlockInFlight(CNode *pfrom, uint256 hash)
         std::pair<uint256, CNode::CThinBlockInFlight>(hash, CNode::CThinBlockInFlight()));
 }
 
-void SendXThinBlock(CBlock &block, CNode *pfrom, const CInv &inv)
+void SendXThinBlock(const CBlock &block, CNode *pfrom, const CInv &inv)
 {
     if (inv.type == MSG_XTHINBLOCK)
     {

@@ -134,6 +134,18 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params 
     return true;
 }
 
+/** Calculate compressed weak block difficulty from compressed strong block difficulty
+   FIXME: Figure out scheme to
+   My very personal preference: Median of per-strong-block votes of weak block difficulty
+   ratio. */
+uint32_t WeakBlockProofOfWork(uint32_t nBits) {
+    arith_uint256 weaktarget;
+    weaktarget.SetCompact(nBits);
+    // FIXME: this is adapted to do regtesting etc and needs to be fixed of course!
+    weaktarget*=2;
+    return weaktarget.GetCompact();
+}
+
 arith_uint256 GetBlockProof(const CBlockIndex &block)
 {
     arith_uint256 bnTarget;

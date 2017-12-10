@@ -4,6 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "arith_uint256.h"
 #include "base58.h"
 #include "amount.h"
 #include "chain.h"
@@ -98,7 +99,8 @@ UniValue getnetworkhashps(const UniValue& params, bool fHelp)
     return GetNetworkHashPS(params.size() > 0 ? params[0].get_int() : 120, params.size() > 1 ? params[1].get_int() : -1);
 }
 
-UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nGenerate, uint64_t nMaxTries, bool keepScript)
+
+UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nGenerate, uint64_t nMaxTries, bool keepScript, int generateWeak)
 {
     static const int nInnerLoopCount = 0x10000;
     int nHeightStart = 0;
@@ -123,10 +125,19 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
           // LOCK(cs_main);
             IncrementExtraNonce(pblock, nExtraNonce);
         }
-        while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) {
+
+        const uint32_t req_nBits = generateWeak > 0 ? WeakBlockProofOfWork(pblock->nBits) :pblock->nBits;
+
+        do {
             ++pblock->nNonce;
-            --nMaxTries;
-        }
+            while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), req_nBits, Params().GetConsensus())) {
+                ++pblock->nNonce;
+                --nMaxTries;
+            }
+            if (nMaxTries == 0 || pblock->nNonce >= nInnerLoopCount) break;
+            LogPrint("weakblocks", "Generated maybe strong block at difficulty %s, strong %s, weak %s, hash %s, nonce: %d.\n", arith_uint256().SetCompact(req_nBits).GetHex(), arith_uint256().SetCompact(pblock->nBits).GetHex(), arith_uint256().SetCompact(WeakBlockProofOfWork(pblock->nBits)).GetHex(), pblock->GetHash().GetHex(), pblock->nNonce);
+        } while (generateWeak == 2 && CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())); // in mode 2, prevent strong blocks
+
         if (nMaxTries == 0) {
             break;
         }
@@ -169,13 +180,14 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
 
 UniValue generate(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() < 1 || params.size() > 2)
+    if (fHelp || params.size() < 1 || params.size() > 3)
         throw runtime_error(
             "generate numblocks ( maxtries )\n"
             "\nMine up to numblocks blocks immediately (before the RPC call returns)\n"
             "\nArguments:\n"
             "1. numblocks    (numeric, required) How many blocks are generated immediately.\n"
             "2. maxtries     (numeric, optional) How many iterations to try (default = 1000000).\n"
+            "3. weakblocks   (numeric, optional) Should weak blocks be generated and submitted? (0: no, 1: yes, but also strong, 2: only weak)\n"
             "\nResult\n"
             "[ blockhashes ]     (array) hashes of blocks generated\n"
             "\nExamples:\n"
@@ -187,6 +199,11 @@ UniValue generate(const UniValue& params, bool fHelp)
     uint64_t nMaxTries = 1000000;
     if (params.size() > 1) {
         nMaxTries = params[1].get_int();
+    }
+    int generateWeak = 0;
+
+    if (params.size() > 2) {
+        generateWeak = params[2].get_int();
     }
 
     boost::shared_ptr<CReserveScript> coinbaseScript;
@@ -200,7 +217,7 @@ UniValue generate(const UniValue& params, bool fHelp)
     if (coinbaseScript->reserveScript.empty())
         throw JSONRPCError(RPC_INTERNAL_ERROR, "No coinbase script available (mining requires a wallet)");
 
-    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, true);
+    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, true, generateWeak);
 }
 
 UniValue generatetoaddress(const UniValue& params, bool fHelp)
@@ -233,7 +250,7 @@ UniValue generatetoaddress(const UniValue& params, bool fHelp)
     boost::shared_ptr<CReserveScript> coinbaseScript(new CReserveScript());
     coinbaseScript->reserveScript = GetScriptForDestination(address.Get());
 
-    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, false);
+    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, false, false);
 }
 
 UniValue getmininginfo(const UniValue& params, bool fHelp)

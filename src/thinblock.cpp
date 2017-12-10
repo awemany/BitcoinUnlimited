@@ -146,7 +146,7 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
 
     thindata.AddThinBlockBytes(vTxHashes.size() * sizeof(uint256), pfrom); // start counting bytes
 
-    // Check that the merkleroot matches the merkelroot calculated from the hashes provided.
+    // Check that the merkleroot matches the merkleroot calculated from the hashes provided.
     bool mutated;
     uint256 merkleroot = ComputeMerkleRoot(vTxHashes, &mutated);
     if (header.hashMerkleRoot != merkleroot || mutated)
@@ -357,7 +357,7 @@ bool CXThinBlockTx::HandleMessage(CDataStream &vRecv, CNode *pfrom)
         pfrom->GetLogName());
 
     // At this point we should have all the full hashes in the block. Check that the merkle
-    // root in the block header matches the merkel root calculated from the hashes provided.
+    // root in the block header matches the merkleroot calculated from the hashes provided.
     bool mutated;
     uint256 merkleroot = ComputeMerkleRoot(pfrom->thinBlockHashes, &mutated);
     if (pfrom->thinBlock.hashMerkleRoot != merkleroot || mutated)
@@ -853,8 +853,8 @@ static bool ReconstructBlock(CNode *pfrom, const bool fXVal, int &missingCount, 
     AssertLockHeld(cs_xval);
     uint64_t maxAllowedSize = maxMessageSizeMultiplier * excessiveBlockSize;
 
-    // We must have all the full tx hashes by this point.  We first check for any repeating
-    // sequences in transaction id's.  This is a possible attack vector and has been used in the past.
+    // We must have all the full tx hashes by this point.  We first check for any duplicate
+    // transaction ids.  This is a possible attack vector and has been used in the past.
     {
         std::set<uint256> setHashes(pfrom->thinBlockHashes.begin(), pfrom->thinBlockHashes.end());
         if (setHashes.size() != pfrom->thinBlockHashes.size())
@@ -862,7 +862,7 @@ static bool ReconstructBlock(CNode *pfrom, const bool fXVal, int &missingCount, 
             thindata.ClearThinBlockData(pfrom, pfrom->thinBlock.GetBlockHeader().GetHash());
 
             dosMan.Misbehaving(pfrom, 10);
-            return error("Repeating Transaction Id sequence, peer=%s", pfrom->GetLogName());
+            return error("Duplicate transaction ids, peer=%s", pfrom->GetLogName());
         }
     }
 

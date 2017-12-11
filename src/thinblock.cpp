@@ -28,6 +28,8 @@ using namespace std;
 
 static bool ReconstructBlock(CNode *pfrom, const bool fXVal, int &missingCount, int &unnecessaryCount);
 
+static const int WEAK_NOT_FOUND=-1;
+
 /*! Returns  the index into the weakblocks array if the block given as 'block' is a superset of that weak block. Returns a value
   smaller than zero otherwise (no matching weak block found). */
 static int partOfLastWeak(const CBlock &block) {
@@ -36,12 +38,12 @@ static int partOfLastWeak(const CBlock &block) {
 
     if (!weakblocks.size()) {
         LogPrint("weakblocks", "Currently no weak blocks -> Nope.\n");
-        return -1;
+        return WEAK_NOT_FOUND;
     }
 
     if (block.vtx.size() < 2) {
         LogPrint("weakblocks", "Coinbase-transaction-only block -> Nope.\n");
-        return -1;
+        return WEAK_NOT_FOUND;
     }
 
     int result = weakblocks.size()-1;
@@ -51,7 +53,7 @@ static int partOfLastWeak(const CBlock &block) {
         LogPrint("weakblocks", "Block is identical to the last weak block -> comparing with next 2nd-last weak block.\n");
         if (weakblocks.size() < 2) {
             LogPrint("weakblocks", "No second weak block, so nope.\n");
-            return -1;
+            return WEAK_NOT_FOUND;
         }
         result--;
         underlying = weakblocks[result];
@@ -59,7 +61,7 @@ static int partOfLastWeak(const CBlock &block) {
 
     if (block.vtx.size() < underlying->vtx.size()) {
         LogPrint("weakblocks", "New block is smaller than latest weak block -> Nope.\n");
-        return -1;
+        return WEAK_NOT_FOUND;
     }
 
     // all except coinbase of the underlying must be included in the new block
@@ -67,7 +69,7 @@ static int partOfLastWeak(const CBlock &block) {
         if (block.vtx[i].GetHash() != underlying->vtx[i].GetHash()) {
             LogPrint("weakblocks", "New block and latest weakblock differ at pos %d, new: %s, latest weak: %s\n",
                      i, block.vtx[i].GetHash().GetHex(), underlying->vtx[i].GetHash().GetHex());
-            return -1;
+            return WEAK_NOT_FOUND;
         }
     }
     LogPrint("weakblocks", "Yes, this block is containing all of the weak block's (%d:%d) transactions and in the same order.\n",
@@ -92,7 +94,7 @@ CThinBlock::CThinBlock(const CBlock &block, CBloomFilter &filter)
 
     int weak_idx = partOfLastWeak(block);
 
-    if (weak_idx >=0) {
+    if (weak_idx != WEAK_NOT_FOUND) {
             CBlock *underlying = weakblocks[weak_idx];
             LogPrint("weakblocks", "Detected block %s as a superset of weak block %s/%d. Creating deltathinblock.\n",
                      block.GetHash().ToString(),
@@ -340,7 +342,7 @@ CXThinBlock::CXThinBlock(const CBlock &block, CBloomFilter *filter)
 
     // prefer deltathinblock over xthin blocks if last weak block is a subset of this block
     // (mark this one as colliding to avoid it)
-    this->collision = partOfLastWeak(block)>=0;
+    this->collision = partOfLastWeak(block) != WEAK_NOT_FOUND;
 
     unsigned int nTx = block.vtx.size();
     vTxHashes.reserve(nTx);
@@ -369,7 +371,7 @@ CXThinBlock::CXThinBlock(const CBlock &block)
     header = block.GetBlockHeader();
     // prefer deltathinblock over xthin blocks if last weak block is a subset of this block
     // (mark this one as colliding to avoid it)
-    this->collision = partOfLastWeak(block)>=0;
+    this->collision = partOfLastWeak(block) != WEAK_NOT_FOUND;
 
 
     unsigned int nTx = block.vtx.size();

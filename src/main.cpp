@@ -3625,8 +3625,10 @@ bool ContextualCheckBlockHeader(const CBlockHeader &block, CValidationState &sta
 {
     const Consensus::Params &consensusParams = Params().GetConsensus();
 
-    *pWeak = (CheckProofOfWork(block.GetHash(), WeakBlockProofOfWork(block.nBits), Params().GetConsensus()) &&
-              !CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus()));
+    const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), WeakBlockProofOfWork(block.nBits), Params().GetConsensus());
+    const bool hasStrongPOW = CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus());
+
+    *pWeak = hasWeakPOW && !hasStrongPOW;
 
     // Check proof of work
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))

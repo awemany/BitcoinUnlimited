@@ -2763,8 +2763,6 @@ CBlockIndex *FindMostWorkChain()
         // already been accepted as valid)
         bool fOldExcessive = false;
 
-        bool fHasWeakBlock = false;
-
         // follow the chain all the way back to where it joins the current active chain.
         while (pindexTest && !chainActive.Contains(pindexTest))
         {
@@ -2787,9 +2785,7 @@ CBlockIndex *FindMostWorkChain()
                 fOldExcessive |= ((pindexTest->nStatus & BLOCK_EXCESSIVE) != 0);
             }
 
-            fHasWeakBlock = pindexTest->nStatus & BLOCK_WEAK;
-
-            if (fFailedChain | fMissingData | fRecentExcessive | fHasWeakBlock)
+            if (fFailedChain | fMissingData | fRecentExcessive)
                 break;
             pindexTest = pindexTest->pprev;
             depth++;
@@ -2823,7 +2819,7 @@ CBlockIndex *FindMostWorkChain()
         }
 
         // Conditions where we want to reject the chain
-        if (fFailedChain || fMissingData || (fRecentExcessive && !fOldExcessive) || fHasWeakBlock)
+        if (fFailedChain || fMissingData || (fRecentExcessive && !fOldExcessive))
         {
             // Candidate chain is not usable (either invalid or missing data)
             if (fFailedChain && (pindexBestInvalid == NULL || pindexNew->nChainWork > pindexBestInvalid->nChainWork))

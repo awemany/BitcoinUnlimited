@@ -144,7 +144,6 @@ enum BlockStatus : uint32_t
 
     BLOCK_FAILED_VALID       =   64, //! stage after last reached validness failed
     BLOCK_FAILED_CHILD       =   128, //! descends from failed block
-    BLOCK_WEAK               =   256, //! block is weak (only reaching weak difficulty target)
     BLOCK_FAILED_MASK        =   BLOCK_FAILED_VALID | BLOCK_FAILED_CHILD,
 };
 

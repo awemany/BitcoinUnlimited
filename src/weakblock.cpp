@@ -1,8 +1,173 @@
+#include "sync.h"
 #include "weakblock.h"
 
 // Weak blocks data structures
 
-std::multimap<uint256, CBlock*> txid2weakblock;
-std::map<uint256, CBlock*> hash2weakblock;
-std::vector<CBlock*> weakblocks;
+// FIXME: use unordered_map wherever it makes sense!
+
+// counts the number of weak blocks found per TXID
+// is the number of weak block confirmations
+std::map<uint256, size_t> weak_confirmations;
+
+// set of all weakly confirmed transactions
+// this one uses all the memory
+std::map<uint256, CTransaction> weak_transactions;
+
+// map from block hash to weak block.
+std::map<uint256, Weakblock*> hash2weakblock;
+
+// map from weak block pointer to hash
+std::map<const Weakblock*, uint256> weakblock2hash;
+
+std::map<const Weakblock*, CBlockHeader> weakblock2header;
+
+// Chronologically sorted weak blocks
+std::vector<Weakblock*> weakblocks;
+
+// last returned CBlock
+CBlock *last_req_block=NULL;
+
 CCriticalSection cs_weakblocks;
+
+static inline CBlock* reassembleFromWeak(const Weakblock *wb) {
+    AssertLockHeld(cs_weakblocks);
+    assert(wb != NULL);
+
+    CBlock* result = new CBlock(weakblock2header[wb]);
+    for (CTransaction* tx : *wb) {
+        result->vtx.push_back(*tx);
+    }
+    assert (weakblock2hash[wb] == result->GetHash());
+    return result;
+}
+
+bool storeWeakblock(const CBlock &block) {
+    uint256 blockhash = block.GetHash();
+    LOCK(cs_weakblocks);
+    if (hash2weakblock.count(blockhash) == 0) {
+        Weakblock* wb=new Weakblock();
+        for (const CTransaction& otx : block.vtx) {
+            uint256 txid = otx.GetHash();
+            CTransaction *tx;
+            if (weak_transactions.count(txid) != 0) {
+                tx = &weak_transactions[txid];
+                weak_confirmations[txid]++;
+            } else {
+                weak_transactions[otx.GetHash()] = otx;
+                tx = &weak_transactions[txid];
+                weak_confirmations[txid]=1;
+            }
+            wb->push_back(tx);
+        }
+        hash2weakblock[blockhash] = wb;
+        weakblock2hash[wb] = blockhash;
+        weakblocks.push_back(wb);
+        weakblock2header[wb] = block;
+        LogPrint("weakblocks", "Tracking weak block of %d transactions.\n", wb->size());
+        return true;
+    } else return false;
+}
+
+const Weakblock* getWeakblock(const uint256& blockhash) {
+    AssertLockHeld(cs_weakblocks);
+    if (hash2weakblock.count(blockhash))
+        return hash2weakblock[blockhash];
+    else return NULL;
+}
+
+const CBlock* blockForWeak(const Weakblock *wb) {
+    AssertLockHeld(cs_weakblocks);
+    if (wb == NULL) return NULL;
+    else if (last_req_block != NULL && last_req_block->GetHash() == HashForWeak(wb)) {
+        return last_req_block;
+    } else {
+        if (last_req_block != NULL)
+            delete last_req_block;
+        last_req_block = reassembleFromWeak(wb);
+        return last_req_block;
+    }
+}
+
+void resetWeakblocks() {
+    LOCK(cs_weakblocks);
+    LogPrint("weakblocks", "Strong block came in - clearing all weak blocks.\n");
+    for (Weakblock* wb : weakblocks)
+        delete wb;
+    weakblocks.clear();
+    hash2weakblock.clear();
+    weakblock2hash.clear();
+    weak_transactions.clear();
+    weak_confirmations.clear();
+    weakblock2header.clear();
+    last_req_block = NULL;
+}
+
+std::vector<std::pair<uint256, size_t> > weakStats() {
+    LOCK(cs_weakblocks);
+    std::vector<std::pair<uint256, size_t> > result;
+    for (Weakblock* wb : weakblocks)
+        result.push_back(std::pair<uint256, size_t>(weakblock2hash[wb],
+                                                    wb->size()));
+    return result;
+}
+
+const Weakblock* buildsOnWeak(const CBlock &block) {
+    AssertLockHeld(cs_weakblocks);
+    LogPrint("weakblocks", "Check whether block %s is delta on top of last or 2nd last weak block.\n", block.GetHash().GetHex());
+
+    if (!weakblocks.size()) {
+        LogPrint("weakblocks", "Currently no weak blocks -> Nope.\n");
+        return NULL;
+    }
+
+    if (block.vtx.size() < 2) {
+        LogPrint("weakblocks", "Coinbase-transaction-only block -> Nope.\n");
+        return NULL;
+    }
+
+    int result = weakblocks.size()-1;
+    Weakblock* underlying = weakblocks[result];
+    uint256 underlying_hash = weakblock2hash[underlying];
+
+    if (underlying_hash == block.GetHash()) {
+        LogPrint("weakblocks", "Block is identical to the last weak block -> comparing with next 2nd-last weak block.\n");
+        if (weakblocks.size() < 2) {
+            LogPrint("weakblocks", "No second weak block, so nope.\n");
+            return NULL;
+        }
+        result--;
+        underlying = weakblocks[result];
+        underlying_hash = weakblock2hash[underlying];
+    }
+
+    if (block.vtx.size() < underlying->size()) {
+        LogPrint("weakblocks", "New block is smaller than latest weak block -> Nope.\n");
+        return NULL;
+    }
+
+    // all except coinbase of the underlying must be included in the new block
+    for (size_t i = 1; i < underlying->size(); i++) {
+        if (block.vtx[i].GetHash() != (*underlying)[i]->GetHash()) {
+            LogPrint("weakblocks", "New block and latest weakblock differ at pos %d, new: %s, tested weak: %s\n",
+                     i, block.vtx[i].GetHash().GetHex(), underlying_hash.GetHex());
+            return NULL;
+        }
+    }
+    LogPrint("weakblocks", "Yes, this block is containing all of the weak block's (%d:%d) transactions and in the same order.\n",
+             result, weakblocks.size());
+    return weakblocks[result];
+}
+
+size_t weakConfirmations(const uint256& txid) {
+    LOCK(cs_weakblocks);
+    if (weak_confirmations.count(txid) > 0)
+        return weak_confirmations[txid];
+    else
+        return 0;
+}
+
+const uint256 HashForWeak(const Weakblock *wb) {
+    AssertLockHeld(cs_weakblocks);
+    if (wb == NULL) return uint256();
+    return weakblock2hash[wb];
+}

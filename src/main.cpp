@@ -1146,7 +1146,7 @@ bool ReadBlockFromDisk(CBlock &block, const CDiskBlockPos &pos, const Consensus:
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), WeakBlockProofOfWork(block.nBits), consensusParams))
+    if (!CheckProofOfWork(block.GetHash(), WeakblockProofOfWork(block.nBits), consensusParams))
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
 
     return true;
@@ -3507,7 +3507,7 @@ bool CheckBlockHeader(const CBlockHeader &block, CValidationState &state, bool f
 {
     // Check proof of work matches claimed amount
     if (fCheckPOW &&
-        !CheckProofOfWork(block.GetHash(), WeakBlockProofOfWork(block.nBits), Params().GetConsensus()))
+        !CheckProofOfWork(block.GetHash(), WeakblockProofOfWork(block.nBits), Params().GetConsensus()))
         return state.DoS(50, error("CheckBlockHeader(): proof of work failed"), REJECT_INVALID, "high-hash");
 
     // Check timestamp
@@ -3621,7 +3621,7 @@ bool ContextualCheckBlockHeader(const CBlockHeader &block, CValidationState &sta
 {
     const Consensus::Params &consensusParams = Params().GetConsensus();
 
-    const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), WeakBlockProofOfWork(block.nBits), Params().GetConsensus());
+    const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), WeakblockProofOfWork(block.nBits), Params().GetConsensus());
     const bool hasStrongPOW = CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus());
 
     *pWeak = hasWeakPOW && !hasStrongPOW;
@@ -3817,8 +3817,43 @@ static bool AcceptBlock(const CBlock &block,
 
     CBlockIndex *&pindex = *ppindex;
 
-    if (!AcceptBlockHeader(block, state, chainparams, &pindex))
+    bool isWeak = false;
+
+    if (!AcceptBlockHeader(block, state, chainparams, &pindex, &isWeak))
         return false;
+
+    // special handling of weak blocks
+    if (isWeak) {
+        // Get prev block index
+        BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
+        if (mi == mapBlockIndex.end())
+            return state.DoS(10, error("%s: previous block %s not found while accepting weak block header %s", __func__,
+                                       block.hashPrevBlock.ToString(), block.GetHash().ToString()),
+                0, "bad-prevblk");
+        CBlockIndex* pindexPrev = mi->second;
+
+        if ((!CheckBlock(block, state)) || !ContextualCheckBlock(block, state, pindexPrev)) {
+            return false;
+        }
+
+        if (storeWeakblock(block)) {
+            std::vector<CBlock> vWeakHeaders;
+            vWeakHeaders.push_back(CBlockHeader(block));
+
+            LogPrint("weakblocks", "Now sending weak block out.\n");
+            // forward weak block as headers message
+            BOOST_FOREACH (CNode *pnode, vNodes) {
+                pnode->PushMessage(NetMsgType::HEADERS, vWeakHeaders);
+                //pnode->PushBlockHash(blockhash);
+            }
+        } else LogPrint("weakblocks", "Received weakblock %s already. Ignoring.\n", block.GetHash().GetHex());
+
+        // and done - don't store this weakBlock in any of the indices etc.
+        return true;
+    } else {
+        // strong block came in - discard all weak ones
+        resetWeakblocks();
+    }
 
     LogPrint("parallel", "Check Block %s with chain work %s block height %d\n", pindex->phashBlock->ToString(),
         pindex->nChainWork.ToString(), pindex->nHeight);
@@ -3862,40 +3897,6 @@ static bool AcceptBlock(const CBlock &block,
     }
 
     int nHeight = pindex->nHeight;
-
-    // special handling of weak blocks
-    if (pindex->nStatus & BLOCK_WEAK) {
-        LOCK(cs_weakblocks);
-        uint256 blockhash = block.GetHash();
-
-        CBlock *weakblock = new CBlock(block);
-        weakblocks.push_back(weakblock);
-        hash2weakblock[blockhash] = weakblock;
-        for (const CTransaction& txid : block.vtx) {
-            txid2weakblock.insert(std::pair<uint256, CBlock*>(txid.GetHash(), weakblock));
-        }
-        LogPrint("weakblocks", "Dealt with weak block of %d transactions. Now sending out.\n", weakblock->vtx.size());
-
-        std::vector<CBlock> vWeakHeaders;
-        vWeakHeaders.push_back(CBlockHeader(block));
-
-        // forward weak block as headers messaage
-        BOOST_FOREACH (CNode *pnode, vNodes)
-        {
-            pnode->PushMessage(NetMsgType::HEADERS, vWeakHeaders);
-            //pnode->PushBlockHash(blockhash);
-        }
-    } else {
-        LogPrint("weakblocks", "Strong block came in - clearing all weak blocks.\n");
-        LOCK(cs_weakblocks);
-        for (CBlock* block : weakblocks) {
-            // FIXME: disconnect from indices?
-            delete block;
-        }
-        txid2weakblock.clear();
-        hash2weakblock.clear();
-        weakblocks.clear();
-    }
 
     // Write block to history file
     try
@@ -5939,33 +5940,36 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
         CNodeState *nodestate = State(pfrom->GetId());
         CBlockIndex *pindex = NULL;
 
-        bool isWeak = false;
+
+        std::vector<CBlock> vHeaders;
+
+        bool isWeak=false;
         {
             LOCK(cs_weakblocks);
-            isWeak = hash2weakblock.count(hashStop);
+            isWeak = isKnownWeakblock(hashStop);
+            if (isWeak) {
+                LogPrint("net", "getheaders request for weak block %s.\n", hashStop.ToString());
+                vHeaders.push_back(blockForWeak(getWeakblock(hashStop))->GetBlockHeader());
+            }
         }
-
-        if (isWeak) LogPrint("net", "GETHEADERS request for weak block %s.\n", hashStop.ToString());
-
-        // weak block special handling as it is not part of the chainActive
-        if (locator.IsNull() || isWeak)
-        {
-            // If locator is null, return the hashStop block
-            BlockMap::iterator mi = mapBlockIndex.find(hashStop);
-            if (mi == mapBlockIndex.end())
-                return true;
-            pindex = (*mi).second;
+        if (!isWeak) {
+            if (locator.IsNull())
+            {
+                // If locator is null, return the hashStop block
+                BlockMap::iterator mi = mapBlockIndex.find(hashStop);
+                if (mi == mapBlockIndex.end())
+                    return true;
+                pindex = (*mi).second;
+            }
+            else
+            {
+                // Find the last block the caller has in the main chain
+                pindex = FindForkInGlobalIndex(chainActive, locator);
+                if (pindex)
+                    pindex = chainActive.Next(pindex);
+            }
         }
-        else
-        {
-            // Find the last block the caller has in the main chain
-            pindex = FindForkInGlobalIndex(chainActive, locator);
-            if (pindex)
-                pindex = chainActive.Next(pindex);
-        }
-
         // we must use CBlocks, as CBlockHeaders won't include the 0x00 nTx count at the end
-        std::vector<CBlock> vHeaders;
         int nLimit = MAX_HEADERS_RESULTS;
         LogPrint("net", "getheaders height %d for block %s from peer %s\n", (pindex ? pindex->nHeight : -1),
             hashStop.ToString(), pfrom->GetLogName());
@@ -6170,7 +6174,33 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
                     return error("invalid header received");
                 }
             }
-            PV->UpdateMostWorkOurFork(header);
+            else {
+                if (!isWeak) {
+                    PV->UpdateMostWorkOurFork(header);
+                }
+            }
+            if (isWeak) {
+
+                // this is the weakblocks variant of 'AlreadyHave'
+                // FIXME: what about old weak blocks floating around for a while?
+                // (we would receive and store them until the next strong block for no reason as of now)
+                bool fAlreadyHave=false;
+                {
+                    LOCK(cs_weakblocks);
+                    fAlreadyHave = isKnownWeakblock(header.GetHash());
+                }
+                // Note: The race that resetWeakblocks() might come here and falsify fAlreadyHave should be harmless
+                // as we _had_ that block already then and are not anymore interested in it anyways.
+
+                CInv inv(MSG_BLOCK, header.GetHash());
+                if (!fAlreadyHave)
+                {
+                    LogPrint("weakblocks", "Got weak header %s. Requesting weak block.\n", header.GetHash().GetHex());
+                    requester.AskFor(inv, pfrom);
+                } else {
+                    LogPrint("weakblocks", "Got weak header %s. Not requesting as we have the weak block already.\n", header.GetHash().GetHex());
+                }
+            }
         }
 
         if (pindexLast)
@@ -6309,25 +6339,40 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
         LoadFilter(pfrom, &filterMemPool);
         {
             LOCK(cs_main);
-            BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
-            if (mi == mapBlockIndex.end())
             {
-                MISBEHAVING(pfrom, 10, "nonexistent block");
-                return error("Peer %s (%d) requested nonexistent block %s", pfrom->addrName.c_str(), pfrom->id,
-                    inv.hash.ToString());
-            }
+                bool isWeak=false;
+                {
+                    LOCK(cs_weakblocks);
+                    isWeak = isKnownWeakblock(inv.hash);
+                    if (isWeak) {
+                        // FIXME: rework to use Weakblock* directly
+                        const CBlock *wb= blockForWeak(getWeakblock(inv.hash));
+                        LogPrint("weakblocks", "Request to send known weak block %s received.\n", inv.hash.GetHex());
+                        SendXThinBlock(*wb, pfrom, inv);
+                    }
+                }
+                if (!isWeak) {
+                    BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
+                    if (mi == mapBlockIndex.end())
+                    {
+                       MISBEHAVING(pfrom, 10, "nonexistent block");
+                       return error("Peer %s (%d) requested nonexistent block %s", pfrom->addrName.c_str(), pfrom->id,
+                                    inv.hash.ToString());
+                    }
 
-            CBlock block;
-            const Consensus::Params &consensusParams = Params().GetConsensus();
-            if (!ReadBlockFromDisk(block, (*mi).second, consensusParams))
-            {
-                // We don't have the block yet, although we know about it.
-                return error("Peer %s (%d) requested block %s that cannot be read", pfrom->addrName.c_str(), pfrom->id,
-                    inv.hash.ToString());
-            }
-            else
-            {
-                SendXThinBlock(block, pfrom, inv);
+                    CBlock block;
+                    const Consensus::Params &consensusParams = Params().GetConsensus();
+                    if (!ReadBlockFromDisk(block, (*mi).second, consensusParams))
+                    {
+                        // We don't have the block yet, although we know about it.
+                        return error("Peer %s (%d) requested block %s that cannot be read", pfrom->addrName.c_str(), pfrom->id,
+                                     inv.hash.ToString());
+                    }
+                    else
+                    {
+                        SendXThinBlock(block, pfrom, inv);
+                    }
+                }
             }
         }
     }

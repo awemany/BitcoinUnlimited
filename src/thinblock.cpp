@@ -171,7 +171,7 @@ bool CThinBlock::HandleMessage(CDataStream &vRecv, CNode *pfrom)
         CBlockIndex *pprev = mi->second;
         CValidationState state;
 
-        bool isWeak = true;
+        bool isWeak = false;
 
         if (!ContextualCheckBlockHeader(thinBlock.header, state, pprev, &isWeak))
         {
@@ -703,7 +703,9 @@ bool CXThinBlock::HandleMessage(CDataStream &vRecv, CNode *pfrom, string strComm
 
         CValidationState state;
         CBlockIndex *pIndex = NULL;
-        if (!AcceptBlockHeader(thinBlock.header, state, Params(), &pIndex))
+
+        bool isWeak=false;
+        if (!AcceptBlockHeader(thinBlock.header, state, Params(), &pIndex, &isWeak))
         {
             int nDoS;
             if (state.IsInvalid(nDoS))

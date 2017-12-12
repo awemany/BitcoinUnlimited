@@ -3739,16 +3739,16 @@ bool ContextualCheckBlock(const CBlock &block, CValidationState &state, CBlockIn
 }
 
 bool AcceptBlockHeader(const CBlockHeader &block,
-    CValidationState &state,
-    const CChainParams &chainparams,
-    CBlockIndex **ppindex)
+                       CValidationState &state,
+                       const CChainParams &chainparams,
+                       CBlockIndex **ppindex,
+                       bool *pWeak)
 {
     AssertLockHeld(cs_main);
     // Check for duplicate
     uint256 hash = block.GetHash();
     CBlockIndex *pindex = NULL;
 
-    bool weak = true;
 
     CBlockIndex *pindexPrev = NULL;
 
@@ -3785,18 +3785,17 @@ bool AcceptBlockHeader(const CBlockHeader &block,
         if (fCheckpointsEnabled && !CheckIndexAgainstCheckpoint(pindexPrev, state, chainparams, hash))
             return error("%s: CheckIndexAgainstCheckpoint(): %s", __func__, state.GetRejectReason().c_str());
 
-        if (!ContextualCheckBlockHeader(block, state, pindexPrev, &weak))
+        if (!ContextualCheckBlockHeader(block, state, pindexPrev, pWeak))
             return false;
     }
     if (pindex == NULL) {
-        pindex = AddToBlockIndex(block);
-        assert(pindex);
-        if (weak || (pindexPrev != NULL && (pindexPrev->nStatus & BLOCK_WEAK))) {
-            if (weak) LogPrint("weakblocks", "Block is weak. Mark it as such.\n");
-            else LogPrint("weakblocks", "Preceding block is weak. Mark this as weak as well.\n");
-            pindex->nStatus |= BLOCK_WEAK;
+        if (*pWeak) {
+            LogPrint("weakblocks", "Block is weak.\n");
+            return true; // do not add weak block to index, just keep in the structures of weakblock.cpp
         } else {
             LogPrint("weakblocks", "Block is strong.\n");
+            pindex = AddToBlockIndex(block);
+            assert(pindex);
         }
     }
 
@@ -6158,7 +6157,10 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
         for (const CBlockHeader &header : headers)
         {
             CValidationState state;
-            if (!AcceptBlockHeader(header, state, chainparams, &pindexLast))
+
+            bool isWeak = false;
+
+            if (!AcceptBlockHeader(header, state, chainparams, &pindexLast, &isWeak))
             {
                 int nDoS;
                 if (state.IsInvalid(nDoS))

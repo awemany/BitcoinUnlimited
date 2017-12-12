@@ -20,13 +20,12 @@ UniValue weakstats(const UniValue& params, bool fHelp) {
     // FIXME: make the results nicer and more informative
     UniValue result(UniValue::VOBJ);
 
-    LOCK(cs_weakblocks);
+    std::vector<std::pair<uint256, size_t> > wstats = weakStats();
 
     // order by receival time
-    for (const CBlock* pblock : weakblocks) {
-        result.push_back(Pair(pblock->GetHash().GetHex(),
-                              pblock->vtx.size()));
-    }
+    for (std::pair<uint256, size_t> p : wstats)
+        result.push_back(Pair(p.first.GetHex(), p.second));
+
     return result;
 }
 
@@ -45,9 +44,7 @@ UniValue weakconfirmations(const UniValue& params, bool fHelp)
     std::string txid_hex = params[0].get_str();
 
     uint256 hash = ParseHashV(params[0], "parameter 1");
-
-    LOCK(cs_weakblocks);
-    return txid2weakblock.count(hash);
+    return weakConfirmations(hash);
 }
 
 static const CRPCCommand commands[] =

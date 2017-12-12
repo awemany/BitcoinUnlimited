@@ -382,7 +382,7 @@ bool RequestBlock(CNode *pfrom, CInv obj)
                 {
                     AddThinBlockInFlight(pfrom, inv2.hash);
 
-                    inv2.type = MSG_XTHINBLOCK;
+                    inv2.type = MSG_THINBLOCK;
                     std::vector<uint256> vOrphanHashes;
                     {
                         LOCK(cs_orphancache);
@@ -409,7 +409,7 @@ bool RequestBlock(CNode *pfrom, CInv obj)
                 {
                     AddThinBlockInFlight(pfrom, inv2.hash);
 
-                    inv2.type = MSG_XTHINBLOCK;
+                    inv2.type = MSG_THINBLOCK;
                     std::vector<uint256> vOrphanHashes;
                     {
                         LOCK(cs_orphancache);

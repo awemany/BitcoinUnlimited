@@ -4346,10 +4346,15 @@ static bool AcceptBlock(const CBlock &block,
             txid2weakblock.insert(std::pair<uint256, CBlock*>(txid.GetHash(), weakblock));
         }
         LogPrint("weakblocks", "Dealt with weak block of %d transactions. Now sending out.\n", weakblock->vtx.size());
-        // forward weak block
+
+        std::vector<CBlock> vWeakHeaders;
+        vWeakHeaders.push_back(CBlockHeader(block));
+
+        // forward weak block as headers messaage
         BOOST_FOREACH (CNode *pnode, vNodes)
         {
-            pnode->PushBlockHash(blockhash);
+            pnode->PushMessage(NetMsgType::HEADERS, vWeakHeaders);
+            //pnode->PushBlockHash(blockhash);
         }
     } else {
         LogPrint("weakblocks", "Strong block came in - clearing all weak blocks.\n");

@@ -140,7 +140,7 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params 
    FIXME: Figure out scheme to
    My very personal preference: Median of per-strong-block votes of weak block difficulty
    ratio. */
-uint32_t WeakblockProofOfWork(uint32_t nBits) {
+uint32_t MinWeakblockProofOfWork(uint32_t nBits) {
     arith_uint256 weaktarget;
     weaktarget.SetCompact(nBits);
     // FIXME: this is adapted to do regtesting etc and needs to be fixed of course!

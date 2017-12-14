@@ -135,7 +135,7 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
 
         // required bits for puzzle solution
         const uint32_t req_nBits = (genmode == genWeakOnly ||
-                                    genmode == genWeakAndStrong) ? WeakblockProofOfWork(pblock->nBits) :pblock->nBits;
+                                    genmode == genWeakAndStrong) ? MinWeakblockProofOfWork(pblock->nBits) :pblock->nBits;
 
         do {
             ++pblock->nNonce;
@@ -149,7 +149,7 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
             LogPrint("weakblocks", "Generated maybe strong block at difficulty %s, strong %s, weak %s, hash %s, nonce: %d.\n",
                      arith_uint256().SetCompact(req_nBits).GetHex(),
                      arith_uint256().SetCompact(pblock->nBits).GetHex(),
-                     arith_uint256().SetCompact(WeakblockProofOfWork(pblock->nBits)).GetHex(),
+                     arith_uint256().SetCompact(MinWeakblockProofOfWork(pblock->nBits)).GetHex(),
                      pblock->GetHash().GetHex(), pblock->nNonce);
         } while (genmode == genWeakOnly &&
                  CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())); // if weak only, suppress strong block solutions

@@ -5605,123 +5605,145 @@ void static ProcessGetData(CNode *pfrom, const Consensus::Params &consensusParam
             if (inv.type == MSG_BLOCK || inv.type == MSG_FILTERED_BLOCK || inv.type == MSG_THINBLOCK ||
                 inv.type == MSG_XTHINBLOCK)
             {
-                bool send = false;
-                BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
-                if (mi != mapBlockIndex.end())
+                // special weak blocks handling
+                bool isWeak=false;
                 {
-                    if (chainActive.Contains(mi->second))
-                    {
-                        send = true;
-                    }
-                    else
-                    {
-                        static const int nOneMonth = 30 * 24 * 60 * 60;
-                        // To prevent fingerprinting attacks, only send blocks outside of the active
-                        // chain if they are valid, and no more than a month older (both in time, and in
-                        // best equivalent proof of work) than the best header chain we know about.
-                        send = mi->second->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != NULL) &&
-                               (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() < nOneMonth) &&
-                               (GetBlockProofEquivalentTime(
-                                    *pindexBestHeader, *mi->second, *pindexBestHeader, consensusParams) < nOneMonth);
-                        if (!send)
-                        {
-                            LogPrintf("%s: ignoring request from peer=%i for old block that isn't in the main chain\n",
-                                __func__, pfrom->GetId());
-                        }
-                        else
-                        { // BU: don't relay excessive blocks
-                            if (mi->second->nStatus & BLOCK_EXCESSIVE)
-                                send = false;
-                            if (!send)
-                                LogPrintf("%s: ignoring request from peer=%i for excessive block of height %d not on "
-                                          "the main chain\n",
-                                    __func__, pfrom->GetId(), mi->second->nHeight);
-                        }
-                        // BU: in the future we can throttle old block requests by setting send=false if we are out of
-                        // bandwidth
-                    }
-                }
-                // disconnect node in case we have reached the outbound limit for serving historical blocks
-                // never disconnect whitelisted nodes
-                static const int nOneWeek = 7 * 24 * 60 * 60; // assume > 1 week = historical
-                if (send && CNode::OutboundTargetReached(true) &&
-                    (((pindexBestHeader != NULL) &&
-                         (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() > nOneWeek)) ||
-                        inv.type == MSG_FILTERED_BLOCK) &&
-                    !pfrom->fWhitelisted)
-                {
-                    LogPrint("net", "historical block serving limit reached, disconnect peer=%d\n", pfrom->GetId());
-
-                    // disconnect node
-                    pfrom->fDisconnect = true;
-                    send = false;
-                }
-                // Pruned nodes may have deleted the block, so check whether
-                // it's available before trying to send.
-                if (send && (mi->second->nStatus & BLOCK_HAVE_DATA))
-                {
-                    // Send block from disk
-                    CBlock block;
-                    if (!ReadBlockFromDisk(block, (*mi).second, consensusParams))
-                    {
-                        // its possible that I know about it but haven't stored it yet
-                        LogPrint("thin", "unable to load block %s from disk\n",
-                            (*mi).second->phashBlock ? (*mi).second->phashBlock->ToString() : "");
-                        // no response
-                    }
-                    else
-                    {
-                        if (inv.type == MSG_BLOCK)
-                        {
+                    LOCK(cs_weakblocks);
+                    isWeak=isKnownWeakblock(inv.hash);
+                    if (isWeak) {
+                        LogPrint("weakblocks", "getdata request for a known weak block.\n");
+                        CBlock block(*blockForWeak(getWeakblock(inv.hash)));
+                        if (inv.type == MSG_BLOCK) {
                             pfrom->blocksSent += 1;
                             pfrom->PushMessage(NetMsgType::BLOCK, block);
                         }
-
-                        // BUIP010 Xtreme Thinblocks: begin section
-                        else if (inv.type == MSG_THINBLOCK || inv.type == MSG_XTHINBLOCK)
-                        {
-                            LogPrint("thin", "Sending xthin by INV queue getdata message\n");
+                        else if (inv.type == MSG_THINBLOCK || inv.type == MSG_XTHINBLOCK) {
+                            LogPrint("weakblocks", "Sending thinblock for weak block by INV queue getdata message\n");
                             SendXThinBlock(block, pfrom, inv);
+                        } else {
+                            LogPrint("weakblocks", "Inventory type not supported yet.\n");
                         }
-                        // BUIP010 Xtreme Thinblocks: end section
-
-                        else // MSG_FILTERED_BLOCK)
+                    }
+                }
+                if (!isWeak) {
+                    bool send = false;
+                    BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
+                    if (mi != mapBlockIndex.end())
+                    {
+                        if (chainActive.Contains(mi->second))
                         {
-                            LOCK(pfrom->cs_filter);
-                            if (pfrom->pfilter)
+                            send = true;
+                        }
+                        else
+                        {
+                            static const int nOneMonth = 30 * 24 * 60 * 60;
+                            // To prevent fingerprinting attacks, only send blocks outside of the active
+                            // chain if they are valid, and no more than a month older (both in time, and in
+                            // best equivalent proof of work) than the best header chain we know about.
+                            send = mi->second->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != NULL) &&
+                                   (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() < nOneMonth) &&
+                                   (GetBlockProofEquivalentTime(
+                                        *pindexBestHeader, *mi->second, *pindexBestHeader, consensusParams) < nOneMonth);
+                            if (!send)
                             {
-                                CMerkleBlock merkleBlock(block, *pfrom->pfilter);
-                                pfrom->PushMessage(NetMsgType::MERKLEBLOCK, merkleBlock);
-                                pfrom->blocksSent += 1;
-                                // CMerkleBlock just contains hashes, so also push any transactions in the block the
-                                // client did not see
-                                // This avoids hurting performance by pointlessly requiring a round-trip
-                                // Note that there is currently no way for a node to request any single transactions we
-                                // didn't send here -
-                                // they must either disconnect and retry or request the full block.
-                                // Thus, the protocol spec specified allows for us to provide duplicate txn here,
-                                // however we MUST always provide at least what the remote peer needs
-                                typedef std::pair<unsigned int, uint256> PairType;
-                                BOOST_FOREACH (PairType &pair, merkleBlock.vMatchedTxn)
-                                {
-                                    pfrom->txsSent += 1;
-                                    pfrom->PushMessage(NetMsgType::TX, block.vtx[pair.first]);
-                                }
+                                LogPrintf("%s: ignoring request from peer=%i for old block that isn't in the main chain\n",
+                                    __func__, pfrom->GetId());
                             }
-                            // else
+                            else
+                            { // BU: don't relay excessive blocks
+                                if (mi->second->nStatus & BLOCK_EXCESSIVE)
+                                    send = false;
+                                if (!send)
+                                    LogPrintf("%s: ignoring request from peer=%i for excessive block of height %d not on "
+                                              "the main chain\n",
+                                        __func__, pfrom->GetId(), mi->second->nHeight);
+                            }
+                            // BU: in the future we can throttle old block requests by setting send=false if we are out of
+                            // bandwidth
+                        }
+                    }
+                    // disconnect node in case we have reached the outbound limit for serving historical blocks
+                    // never disconnect whitelisted nodes
+                    static const int nOneWeek = 7 * 24 * 60 * 60; // assume > 1 week = historical
+                    if (send && CNode::OutboundTargetReached(true) &&
+                        (((pindexBestHeader != NULL) &&
+                             (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() > nOneWeek)) ||
+                            inv.type == MSG_FILTERED_BLOCK) &&
+                        !pfrom->fWhitelisted)
+                    {
+                        LogPrint("net", "historical block serving limit reached, disconnect peer=%d\n", pfrom->GetId());
+
+                        // disconnect node
+                        pfrom->fDisconnect = true;
+                        send = false;
+                    }
+                    // Pruned nodes may have deleted the block, so check whether
+                    // it's available before trying to send.
+                    if (send && (mi->second->nStatus & BLOCK_HAVE_DATA))
+                    {
+                        // Send block from disk
+                        CBlock block;
+                        if (!ReadBlockFromDisk(block, (*mi).second, consensusParams))
+                        {
+                            // its possible that I know about it but haven't stored it yet
+                            LogPrint("thin", "unable to load block %s from disk\n",
+                                (*mi).second->phashBlock ? (*mi).second->phashBlock->ToString() : "");
                             // no response
                         }
-
-                        // Trigger the peer node to send a getblocks request for the next batch of inventory
-                        if (inv.hash == pfrom->hashContinue)
+                        else
                         {
-                            // Bypass PushInventory, this must send even if redundant,
-                            // and we want it right after the last block so they don't
-                            // wait for other stuff first.
-                            std::vector<CInv> vInv;
-                            vInv.push_back(CInv(MSG_BLOCK, chainActive.Tip()->GetBlockHash()));
-                            pfrom->PushMessage(NetMsgType::INV, vInv);
-                            pfrom->hashContinue.SetNull();
+                            if (inv.type == MSG_BLOCK)
+                            {
+                                pfrom->blocksSent += 1;
+                                pfrom->PushMessage(NetMsgType::BLOCK, block);
+                            }
+
+                            // BUIP010 Xtreme Thinblocks: begin section
+                            else if (inv.type == MSG_THINBLOCK || inv.type == MSG_XTHINBLOCK)
+                            {
+                                LogPrint("thin", "Sending xthin by INV queue getdata message\n");
+                                SendXThinBlock(block, pfrom, inv);
+                            }
+                            // BUIP010 Xtreme Thinblocks: end section
+
+                            else // MSG_FILTERED_BLOCK)
+                            {
+                                LOCK(pfrom->cs_filter);
+                                if (pfrom->pfilter)
+                                {
+                                    CMerkleBlock merkleBlock(block, *pfrom->pfilter);
+                                    pfrom->PushMessage(NetMsgType::MERKLEBLOCK, merkleBlock);
+                                    pfrom->blocksSent += 1;
+                                    // CMerkleBlock just contains hashes, so also push any transactions in the block the
+                                    // client did not see
+                                    // This avoids hurting performance by pointlessly requiring a round-trip
+                                    // Note that there is currently no way for a node to request any single transactions we
+                                    // didn't send here -
+                                    // they must either disconnect and retry or request the full block.
+                                    // Thus, the protocol spec specified allows for us to provide duplicate txn here,
+                                    // however we MUST always provide at least what the remote peer needs
+                                    typedef std::pair<unsigned int, uint256> PairType;
+                                    BOOST_FOREACH (PairType &pair, merkleBlock.vMatchedTxn)
+                                    {
+                                        pfrom->txsSent += 1;
+                                        pfrom->PushMessage(NetMsgType::TX, block.vtx[pair.first]);
+                                    }
+                                }
+                                // else
+                                // no response
+                            }
+
+                            // Trigger the peer node to send a getblocks request for the next batch of inventory
+                            if (inv.hash == pfrom->hashContinue)
+                            {
+                                // Bypass PushInventory, this must send even if redundant,
+                                // and we want it right after the last block so they don't
+                                // wait for other stuff first.
+                                std::vector<CInv> vInv;
+                                vInv.push_back(CInv(MSG_BLOCK, chainActive.Tip()->GetBlockHash()));
+                                pfrom->PushMessage(NetMsgType::INV, vInv);
+                                pfrom->hashContinue.SetNull();
+                            }
                         }
                     }
                 }

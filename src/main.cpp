@@ -1668,7 +1668,7 @@ bool ReadBlockFromDisk(CBlock &block, const CDiskBlockPos &pos, const Consensus:
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), WeakblockProofOfWork(block.nBits), consensusParams))
+    if (!CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), consensusParams))
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
 
     return true;
@@ -3982,7 +3982,7 @@ bool CheckBlockHeader(const CBlockHeader &block, CValidationState &state, bool f
 {
     // Check proof of work matches claimed amount
     if (fCheckPOW &&
-        !CheckProofOfWork(block.GetHash(), WeakblockProofOfWork(block.nBits), Params().GetConsensus()))
+        !CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), Params().GetConsensus()))
         return state.DoS(50, error("CheckBlockHeader(): proof of work failed"), REJECT_INVALID, "high-hash");
 
     // Check timestamp
@@ -4096,7 +4096,7 @@ bool ContextualCheckBlockHeader(const CBlockHeader &block, CValidationState &sta
 {
     const Consensus::Params &consensusParams = Params().GetConsensus();
 
-    const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), WeakblockProofOfWork(block.nBits), Params().GetConsensus());
+    const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), Params().GetConsensus());
     const bool hasStrongPOW = CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus());
 
     *pWeak = hasWeakPOW && !hasStrongPOW;

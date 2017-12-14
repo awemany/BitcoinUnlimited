@@ -239,7 +239,7 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
     uint256 merkleroot = ComputeMerkleRoot(vTxHashes, &mutated);
     if (header.hashMerkleRoot != merkleroot || mutated)
     {
-        uint32_t weak_nbits = WeakblockProofOfWork(GetNextWorkRequired(chainActive.Tip(), &header, Params().GetConsensus()));
+        uint32_t weak_nbits = MinWeakblockProofOfWork(GetNextWorkRequired(chainActive.Tip(), &header, Params().GetConsensus()));
         if (vTxHashes.size() > 0 && CheckProofOfWork(vTxHashes[0],
                                                      weak_nbits, Params().GetConsensus())) {
             // Note: Causing this rerequest needs weak work still

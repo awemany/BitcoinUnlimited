@@ -21,12 +21,15 @@ class CNode;
 
 class CThinBlock
 {
+private:
+    // to rerequest a regular block
+    void rerequestRegular(CNode *pfrom, uint256 blockhash);
+
 public:
     CBlockHeader header;
     std::vector<uint256> vTxHashes; // List of all transaction ids in the block
     std::vector<CTransaction> vMissingTx; // vector of transactions that did not match the bloom filter
 
-public:
     CThinBlock(const CBlock &block, CBloomFilter &filter);
     CThinBlock() {}
     /**

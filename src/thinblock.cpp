@@ -166,6 +166,20 @@ bool CThinBlock::HandleMessage(CDataStream &vRecv, CNode *pfrom)
     return thinBlock.process(pfrom, nSizeThinBlock);
 }
 
+
+void CThinBlock::rerequestRegular(CNode *pfrom, uint256 blockhash) {
+    thindata.UpdateInBoundReRequestedTx(pfrom->thinBlockWaitingForTxns);
+    thindata.ClearThinBlockData(pfrom, header.GetHash());
+
+    vector<CInv> vGetData;
+    vGetData.push_back(CInv(MSG_BLOCK, blockhash));
+    pfrom->PushMessage(NetMsgType::GETDATA, vGetData);
+    requester.Resume(vGetData[0]);
+
+    LOCK(cs_xval);
+    setPreVerifiedTxHash.clear(); // Xpress Validation - clear the set since we do not do XVal on regular blocks
+}
+
 bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
 {
     // Xpress Validation - only perform xval if the chaintip matches the last blockhash in the thinblock
@@ -199,6 +213,10 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
                 nhashes.push_back(vTxHashes[i]);
             }
             vTxHashes = nhashes;
+        } else {
+            if (vTxHashes.size()>0) {
+                LogPrint("weakblocks", "This is not a known deltathin block. Underlying weak block would be %s.\n", vTxHashes[0].GetHex());
+            }
         }
     }
     // FIXME: weakblocks: prevent banning of nodes if the reconstruction does not work out
@@ -222,10 +240,20 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
     uint256 merkleroot = ComputeMerkleRoot(vTxHashes, &mutated);
     if (header.hashMerkleRoot != merkleroot || mutated)
     {
-        thindata.ClearThinBlockData(pfrom, header.GetHash());
-        requester.Resume(CInv(MSG_BLOCK, header.GetHash()));
-        dosMan.Misbehaving(pfrom, 100);
-        return error("Thinblock merkle root does not match computed merkle root, peer=%s", pfrom->GetLogName());
+        uint32_t weak_nbits = WeakblockProofOfWork(GetNextWorkRequired(chainActive.Tip(), &header, Params().GetConsensus()));
+        if (vTxHashes.size() > 0 && CheckProofOfWork(vTxHashes[0],
+                                                     weak_nbits, Params().GetConsensus())) {
+            // Note: Causing this rerequest needs weak work still
+            // FIXME: still, guard against replay attacks
+            LogPrint("weakblocks", "It seems to be refering to a weak block though, that we're unable to reconstruct from. So request a normal block instead.\n");
+            rerequestRegular(pfrom, header.GetHash());
+            return true;
+        } else {
+            thindata.ClearThinBlockData(pfrom, header.GetHash());
+            requester.Resume(CInv(MSG_BLOCK, header.GetHash()));
+            dosMan.Misbehaving(pfrom, 100);
+            return error("Thinblock merkle root does not match computed merkle root, peer=%s", pfrom->GetLogName());
+        }
     }
 
     // Create the mapMissingTx from all the supplied tx's in the xthinblock
@@ -280,16 +308,7 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
         // finish reassembling the block, we need to re-request the full regular block
         LogPrint("thin", "Missing %d Thinblock transactions, re-requesting a regular block from peer=%s\n",
             pfrom->thinBlockWaitingForTxns, pfrom->GetLogName());
-        thindata.UpdateInBoundReRequestedTx(pfrom->thinBlockWaitingForTxns);
-        thindata.ClearThinBlockData(pfrom, header.GetHash());
-
-        vector<CInv> vGetData;
-        vGetData.push_back(CInv(MSG_BLOCK, header.GetHash()));
-        pfrom->PushMessage(NetMsgType::GETDATA, vGetData);
-        requester.Resume(vGetData[0]);
-
-        LOCK(cs_xval);
-        setPreVerifiedTxHash.clear(); // Xpress Validation - clear the set since we do not do XVal on regular blocks
+        rerequestRegular(pfrom, header.GetHash());
     }
 
     return true;

@@ -6192,7 +6192,7 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
                 // Note: The race that resetWeakblocks() might come here and falsify fAlreadyHave should be harmless
                 // as we _had_ that block already then and are not anymore interested in it anyways.
 
-                CInv inv(MSG_BLOCK, header.GetHash());
+                CInv inv(MSG_THINBLOCK, header.GetHash());
                 if (!fAlreadyHave)
                 {
                     LogPrint("weakblocks", "Got weak header %s. Requesting weak block.\n", header.GetHash().GetHex());

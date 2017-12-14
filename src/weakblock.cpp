@@ -113,7 +113,7 @@ std::vector<std::pair<uint256, size_t> > weakStats() {
 
 const Weakblock* buildsOnWeak(const CBlock &block) {
     AssertLockHeld(cs_weakblocks);
-    LogPrint("weakblocks", "Check whether block %s is delta on top of last or 2nd last weak block.\n", block.GetHash().GetHex());
+    LogPrint("weakblocks", "Check whether block %s is delta on top of last weak block coming before it.\n", block.GetHash().GetHex());
 
     if (!weakblocks.size()) {
         LogPrint("weakblocks", "Currently no weak blocks -> Nope.\n");
@@ -126,18 +126,28 @@ const Weakblock* buildsOnWeak(const CBlock &block) {
     }
 
     int result = weakblocks.size()-1;
+
+    // stack weak blocks only onto blocks received earlier than the one at hand, and
+    // also do not stack a block onto itself.
+    // The reason to do this loop instead of just comparing the last and second last block is the following scenario:
+    // WB1 arrives
+    // WB2 arrives with same transaction set as WB1
+    // WB1 might be built on top of WB2, confusing peers
+    for (size_t i=1; i < weakblocks.size(); i++) {
+        if (weakblock2hash[weakblocks[i]] == block.GetHash()) {
+            result = i-1;
+            LogPrint("weakblocks", "Block is identical to weak block %d (out of %d weakblocks) - trying to stack onto the one before.\n", i, weakblocks.size());
+            break;
+        }
+    }
+
+
     Weakblock* underlying = weakblocks[result];
     uint256 underlying_hash = weakblock2hash[underlying];
 
     if (underlying_hash == block.GetHash()) {
-        LogPrint("weakblocks", "Block is identical to the last weak block -> comparing with next 2nd-last weak block.\n");
-        if (weakblocks.size() < 2) {
-            LogPrint("weakblocks", "No second weak block, so nope.\n");
-            return NULL;
-        }
-        result--;
-        underlying = weakblocks[result];
-        underlying_hash = weakblock2hash[underlying];
+        LogPrint("weakblocks", "No matching block other than itself.\n");
+        return NULL;
     }
 
     if (block.vtx.size() < underlying->size()) {
@@ -153,7 +163,8 @@ const Weakblock* buildsOnWeak(const CBlock &block) {
             return NULL;
         }
     }
-    LogPrint("weakblocks", "Yes, this block is containing all of the weak block's (%d:%d) transactions and in the same order.\n",
+    LogPrint("weakblocks", "Yes, this block is containing all of the weak block's (%s:%d (out of %d weakblocks)) transactions and in the same order.\n",
+             HashForWeak(weakblocks[result]).GetHex(),
              result, weakblocks.size());
     return weakblocks[result];
 }

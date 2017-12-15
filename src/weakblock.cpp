@@ -90,7 +90,6 @@ const CBlock* blockForWeak(const Weakblock *wb) {
 
 void resetWeakblocks() {
     LOCK(cs_weakblocks);
-    LogPrint("weakblocks", "Strong block came in - clearing all weak blocks.\n");
     for (Weakblock* wb : weakblocks)
         delete wb;
     weakblocks.clear();

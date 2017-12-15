@@ -3843,8 +3843,9 @@ static bool AcceptBlock(const CBlock &block,
             LogPrint("weakblocks", "Now sending weak block out.\n");
             // forward weak block as headers message
             BOOST_FOREACH (CNode *pnode, vNodes) {
-                pnode->PushMessage(NetMsgType::HEADERS, vWeakHeaders);
-                //pnode->PushBlockHash(blockhash);
+                if (pnode->WeakblocksCapable()) {
+                    pnode->PushMessage(NetMsgType::HEADERS, vWeakHeaders);
+                }
             }
         } else LogPrint("weakblocks", "Received weakblock %s already. Ignoring.\n", block.GetHash().GetHex());
 

@@ -333,9 +333,6 @@ static void addConnectionOptions(AllowedArgs &allowedArgs)
         .addArg("peerbloomfilters", optionalBool,
             strprintf(_("Support filtering of blocks and transaction with bloom filters (default: %u)"),
                     DEFAULT_PEERBLOOMFILTERS))
-        .addArg("weakblocks", optionalBool,
-            strprintf(_("Support for sending and receiving of weak blocks with less than full proof of work (default: %u)"),
-                    DEFAULT_WEAKBLOCKS))
         .addDebugArg("enforcenodebloom", optionalBool,
             strprintf("Enforce minimum protocol version to limit use of bloom filters (default: %u)", 0))
         .addArg(

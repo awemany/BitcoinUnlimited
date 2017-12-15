@@ -1,5 +1,35 @@
 #include "sync.h"
 #include "weakblock.h"
+#include "tweak.h"
+#include "chainparams.h"
+
+
+// BU tweaks enable and config for weak blocks
+extern CTweak<uint32_t> wbConsiderPOWratio;
+extern CTweak<uint32_t> wbEnable;
+
+bool weakblocksEnabled() {
+    LOCK(cs_weakblocks);
+    return wbEnable.value;
+}
+
+uint32_t weakblocksConsiderPOWRatio() {
+    AssertLockHeld(cs_weakblocks);
+    if (Consensus::Params().fPowNoRetargeting) {
+        //LogPrint("weakblocks", "Returning consideration POW for testnet.\n");
+        return 4;
+    }
+    //LogPrint("weakblocks", "Returning configured consideration POW ratio %d.\n", wbConsiderPOWratio.value);
+    return wbConsiderPOWratio.value;
+}
+
+uint32_t weakblocksMinPOWRatio() {
+    AssertLockHeld(cs_weakblocks);
+    if (Consensus::Params().fPowNoRetargeting)
+        return 8;
+    return 600;
+}
+
 
 // Weak blocks data structures
 

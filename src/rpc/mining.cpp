@@ -135,7 +135,7 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
 
         // required bits for puzzle solution
         const uint32_t req_nBits = (genmode == genWeakOnly ||
-                                    genmode == genWeakAndStrong) ? MinWeakblockProofOfWork(pblock->nBits) :pblock->nBits;
+                                    genmode == genWeakAndStrong) ? ConsiderationWeakblockProofOfWork(pblock->nBits) :pblock->nBits;
 
         do {
             ++pblock->nNonce;

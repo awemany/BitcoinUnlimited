@@ -36,6 +36,7 @@
 #include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "version.h"
+#include "weakblock.h"
 
 #include <atomic>
 #include <boost/foreach.hpp>
@@ -278,6 +279,14 @@ during reindexing by allowing the size to be set to low and random values.
 CTweak<uint64_t> checkScriptDays("blockchain.checkScriptDays",
     "The number of days in the past we check scripts during initial block download.",
     DEFAULT_CHECKPOINT_DAYS);
+
+
+CTweak<bool> wbEnable("weakblocks.enable",
+                      "Enable weakblocks support",
+                      DEFAULT_WEAKBLOCKS_ENABLE);
+
+CTweak<uint32_t> wbConsiderPOWratio("weakblocks.considerPOW",
+                                    "The factor to be applied to the current strong blocks target value which will be the maximum target value where a weak block will be stored and forwarded", DEFAULT_WEAKBLOCKS_CONSIDER_POW_RATIO);
 
 
 CRequestManager requester; // after the maps nodes and tweaks

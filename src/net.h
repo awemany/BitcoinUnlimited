@@ -547,6 +547,10 @@ public:
         return false;
     }
 
+    bool WeakblocksCapable() {
+        return nServices & NODE_WEAKBLOCKS;
+    }
+
     void AddAddressKnown(const CAddress &addr) { addrKnown.insert(addr.GetKey()); }
     void PushAddress(const CAddress &addr)
     {

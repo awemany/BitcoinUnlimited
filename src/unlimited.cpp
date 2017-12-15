@@ -36,6 +36,9 @@
 #include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "version.h"
+#include "init.h"
+#include "pow.h"
+#include "weakblock.h"
 
 #include <atomic>
 #include <boost/foreach.hpp>
@@ -628,10 +631,20 @@ void static BitcoinMiner(const CChainParams &chainparams)
             //
             int64_t nStart = GetTime();
             arith_uint256 hashTarget = arith_uint256().SetCompact(pblock->nBits);
+            LogPrint("miner", "(Strong) hash target: %s\n", hashTarget.GetHex());
+
             uint256 hash;
             uint32_t nNonce = 0;
             while (true)
             {
+                // If weakblocks are enabled, auto generate weakblocks (that can be forwarded according to current local node rules) as well.
+                if (weakblocksEnabled()) {
+                    LOCK(cs_weakblocks);
+                    //LogPrint("weakblocks", "Miner will also generate weakblocks.\n");
+                    hashTarget = arith_uint256().SetCompact(ConsiderationWeakblockProofOfWork(pblock->nBits));
+                    //LogPrint("weakblocks", "Hash target for weak blocks: %s\n", hashTarget.GetHex());
+                }
+
                 // Check if something found
                 if (ScanHash(pblock, nNonce, &hash))
                 {
@@ -2777,10 +2790,10 @@ void ThreadTxHandler()
                     FormatStateMessage(state));
                 if (state.GetRejectCode() < REJECT_INTERNAL) // Never send AcceptToMemoryPool's internal codes over P2P
                 {
-// TODO
-// pfrom->PushMessage(NetMsgType::REJECT, strCommand, (unsigned char)state.GetRejectCode(),
-//    state.GetRejectReason().substr(0, MAX_REJECT_MESSAGE_LENGTH), inv.hash);
-#if 0                    
+                    // TODO
+                    //pfrom->PushMessage(NetMsgType::REJECT, strCommand, (unsigned char)state.GetRejectCode(),
+                    //    state.GetRejectReason().substr(0, MAX_REJECT_MESSAGE_LENGTH), inv.hash);
+#if 0
                     if (nDoS > 0)
                     {
 #ifdef BITCOIN_CASH

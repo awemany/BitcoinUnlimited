@@ -16,6 +16,15 @@
 // FIXME: Weakblocks and mempool?
 // FIXME: Weakblocks and mempool and getblocktemplate?
 
+const uint32_t DEFAULT_WEAKBLOCKS_CONSIDER_POW_RATIO=30;
+const bool DEFAULT_WEAKBLOCKS_ENABLE=true;
+
+bool weakblocksEnabled();
+uint32_t weakblocksConsiderPOWRatio();
+
+// absolute minimum POW target multiplicator - below this, also weak blocks are considered invalid and nodes sending those are penalized and banned
+uint32_t weakblocksMinPOWRatio();
+
 // Weak blocks data structures
 //! Map TXID to weak blocks containing them
 //extern std::multimap<uint256, CBlock*> txid2weakblock;

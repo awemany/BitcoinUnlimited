@@ -1146,7 +1146,7 @@ bool ReadBlockFromDisk(CBlock &block, const CDiskBlockPos &pos, const Consensus:
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), consensusParams))
+    if (!CheckProofOfWork(block.GetHash(), block.nBits, consensusParams))
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
 
     return true;
@@ -3824,6 +3824,15 @@ static bool AcceptBlock(const CBlock &block,
 
     // special handling of weak blocks
     if (isWeak) {
+        if (!weakblocksEnabled()) {
+            LogPrint("weakblocks", "Received weakblocks though weakblocks are disabled. Ignoring.\n");
+            return true;
+        }
+        if (!CheckProofOfWork(block.GetHash(), ConsiderationWeakblockProofOfWork(block.nBits), Params().GetConsensus())) {
+            LogPrint("weakblocks", "Weakblock %s is below consideration threshold. Ignoring.\n", block.GetHash().GetHex());
+            return true;
+        }
+
         // Get prev block index
         BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
         if (mi == mapBlockIndex.end())
@@ -3853,6 +3862,7 @@ static bool AcceptBlock(const CBlock &block,
         return true;
     } else {
         // strong block came in - discard all weak ones
+        LogPrint("weakblocks", "Strong block came in - discarding all weak blocks.\n");
         resetWeakblocks();
     }
 
@@ -5198,17 +5208,21 @@ static bool ProcessGetData(CNode *pfrom, const Consensus::Params &consensusParam
                     LOCK(cs_weakblocks);
                     isWeak=isKnownWeakblock(inv.hash);
                     if (isWeak) {
-                        LogPrint("weakblocks", "getdata request for a known weak block.\n");
-                        CBlock block(*blockForWeak(getWeakblock(inv.hash)));
-                        if (inv.type == MSG_BLOCK) {
-                            pfrom->blocksSent += 1;
-                            pfrom->PushMessage(NetMsgType::BLOCK, block);
-                        }
-                        else if (inv.type == MSG_THINBLOCK || inv.type == MSG_XTHINBLOCK) {
-                            LogPrint("weakblocks", "Sending thinblock for weak block by INV queue getdata message\n");
-                            SendXThinBlock(block, pfrom, inv);
+                        if (weakblocksEnabled()) {
+                            LogPrint("weakblocks", "getdata request for a known weak block.\n");
+                            CBlock block(*blockForWeak(getWeakblock(inv.hash)));
+                            if (inv.type == MSG_BLOCK) {
+                                pfrom->blocksSent += 1;
+                                pfrom->PushMessage(NetMsgType::BLOCK, block);
+                            }
+                            else if (inv.type == MSG_THINBLOCK || inv.type == MSG_XTHINBLOCK) {
+                                LogPrint("weakblocks", "Sending thinblock for weak block by INV queue getdata message\n");
+                                SendXThinBlock(block, pfrom, inv);
+                            } else {
+                                LogPrint("weakblocks", "Inventory type not supported yet.\n");
+                            }
                         } else {
-                            LogPrint("weakblocks", "Inventory type not supported yet.\n");
+                            LogPrint("weakblocks", "Request for stale (though existing) weakblock while weakblocks are disabled. Ignored.\n");
                         }
                     }
                 }
@@ -5970,8 +5984,11 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
             LOCK(cs_weakblocks);
             isWeak = isKnownWeakblock(hashStop);
             if (isWeak) {
-                LogPrint("net", "getheaders request for weak block %s.\n", hashStop.ToString());
-                vHeaders.push_back(blockForWeak(getWeakblock(hashStop))->GetBlockHeader());
+                LogPrint("weakblocks", "getheaders request for weak block %s.\n", hashStop.ToString());
+                if (weakblocksEnabled())
+                    vHeaders.push_back(blockForWeak(getWeakblock(hashStop))->GetBlockHeader());
+                else
+                    LogPrint("weakblocks", "Ignoring weak block getheaders request as weak blocks are disabled.\n");
             }
         }
         if (!isWeak) {
@@ -6202,25 +6219,28 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
                 }
             }
             if (isWeak) {
+                if (weakblocksEnabled()) {
+                    // this is the weakblocks variant of 'AlreadyHave'
+                    // FIXME: what about old weak blocks floating around for a while?
+                    // (we would receive and store them until the next strong block for no reason as of now)
+                    bool fAlreadyHave=false;
+                    {
+                        LOCK(cs_weakblocks);
+                        fAlreadyHave = isKnownWeakblock(header.GetHash());
+                    }
+                    // Note: The race that resetWeakblocks() might come here and falsify fAlreadyHave should be harmless
+                    // as we _had_ that block already then and are not anymore interested in it anyways.
 
-                // this is the weakblocks variant of 'AlreadyHave'
-                // FIXME: what about old weak blocks floating around for a while?
-                // (we would receive and store them until the next strong block for no reason as of now)
-                bool fAlreadyHave=false;
-                {
-                    LOCK(cs_weakblocks);
-                    fAlreadyHave = isKnownWeakblock(header.GetHash());
-                }
-                // Note: The race that resetWeakblocks() might come here and falsify fAlreadyHave should be harmless
-                // as we _had_ that block already then and are not anymore interested in it anyways.
-
-                CInv inv(MSG_THINBLOCK, header.GetHash());
-                if (!fAlreadyHave)
-                {
-                    LogPrint("weakblocks", "Got weak header %s. Requesting weak block.\n", header.GetHash().GetHex());
-                    requester.AskFor(inv, pfrom);
+                    CInv inv(MSG_THINBLOCK, header.GetHash());
+                    if (!fAlreadyHave)
+                    {
+                        LogPrint("weakblocks", "Got weak header %s. Requesting weak block.\n", header.GetHash().GetHex());
+                        requester.AskFor(inv, pfrom);
+                    } else {
+                        LogPrint("weakblocks", "Got weak header %s. Not requesting as we have the weak block already.\n", header.GetHash().GetHex());
+                    }
                 } else {
-                    LogPrint("weakblocks", "Got weak header %s. Not requesting as we have the weak block already.\n", header.GetHash().GetHex());
+                    LogPrint("weakblocks", "Received weak blocks header though weak blocks are disabled. Ignoring.\n");
                 }
             }
         }
@@ -6370,7 +6390,12 @@ bool ProcessMessage(CNode *pfrom, std::string strCommand, CDataStream &vRecv, in
                         // FIXME: rework to use Weakblock* directly
                         const CBlock *wb= blockForWeak(getWeakblock(inv.hash));
                         LogPrint("weakblocks", "Request to send known weak block %s received.\n", inv.hash.GetHex());
-                        SendXThinBlock(*wb, pfrom, inv);
+                        if (weakblocksEnabled()) {
+                            LogPrint("weakblocks", "Sending (delta)thin weak block.\n");
+                            SendXThinBlock(*wb, pfrom, inv);
+                        } else {
+                            LogPrint("weakblocks", "NOT sending (delta)thin weak block, as weak blocks are disabled.\n");
+                        }
                     }
                 }
                 if (!isWeak) {

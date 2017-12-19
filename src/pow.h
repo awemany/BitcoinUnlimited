@@ -22,7 +22,7 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex *pindexLast,
     const Consensus::Params &);
 
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params &);
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params &, const uint32_t weakFactor);
 
 // minimum to be considered "possibly valid" and not lead to banning
 uint32_t MinWeakblockProofOfWork(uint32_t nBits);

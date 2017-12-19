@@ -25,6 +25,7 @@
 #include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "ui_interface.h"
+#include "weakblock.h"
 
 #include <stdint.h>
 
@@ -133,15 +134,22 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
             IncrementExtraNonce(pblock, nExtraNonce);
         }
 
-        // required bits for puzzle solution
-        const uint32_t req_nBits = (genmode == genWeakOnly ||
-                                    genmode == genWeakAndStrong) ? ConsiderationWeakblockProofOfWork(pblock->nBits) :pblock->nBits;
+        uint32_t req_nBits, weakFactor;
+        {
+            LOCK(cs_weakblocks);
+            // required bits for puzzle solution
+            req_nBits = (genmode == genWeakOnly ||
+                                        genmode == genWeakAndStrong) ? ConsiderationWeakblockProofOfWork(pblock->nBits) :pblock->nBits;
+
+            weakFactor = (genmode == genWeakOnly ||
+                          genmode == genWeakAndStrong) ? weakblocksConsiderPOWRatio() : 1;
+        }
 
         do {
             ++pblock->nNonce;
             while (nMaxTries > 0 &&
                    pblock->nNonce < nInnerLoopCount
-                   && !CheckProofOfWork(pblock->GetHash(), req_nBits, Params().GetConsensus())) {
+                   && !CheckProofOfWork(pblock->GetHash(), req_nBits, Params().GetConsensus(), weakFactor)) {
                 ++pblock->nNonce;
                 --nMaxTries;
             }
@@ -152,7 +160,7 @@ UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nG
                      arith_uint256().SetCompact(MinWeakblockProofOfWork(pblock->nBits)).GetHex(),
                      pblock->GetHash().GetHex(), pblock->nNonce);
         } while (genmode == genWeakOnly &&
-                 CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())); // if weak only, suppress strong block solutions
+                 CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus(), 1)); // if weak only, suppress strong block solutions
 
         if (nMaxTries == 0) {
             break;

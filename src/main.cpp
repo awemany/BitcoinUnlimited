@@ -1668,7 +1668,7 @@ bool ReadBlockFromDisk(CBlock &block, const CDiskBlockPos &pos, const Consensus:
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), block.nBits, consensusParams))
+    if (!CheckProofOfWork(block.GetHash(), block.nBits, consensusParams, 1))
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
 
     return true;
@@ -3980,12 +3980,14 @@ bool FindUndoPos(CValidationState &state, int nFile, CDiskBlockPos &pos, unsigne
 
 bool CheckBlockHeader(const CBlockHeader &block, CValidationState &state, bool fCheckPOW)
 {
-    // Check proof of work matches claimed amount
-    if (fCheckPOW &&
-        !CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), Params().GetConsensus()) &&
-        !CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus()))
-        return state.DoS(50, error("CheckBlockHeader(): proof of work failed"), REJECT_INVALID, "high-hash");
-
+    {
+        LOCK(cs_weakblocks);
+        // Check proof of work matches claimed amount
+        if (fCheckPOW &&
+            !CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), Params().GetConsensus(), weakblocksMinPOWRatio()) &&
+            !CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus(), 1))
+            return state.DoS(50, error("CheckBlockHeader(): proof of work failed"), REJECT_INVALID, "high-hash");
+    }
     // Check timestamp
     if (block.GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
         return state.Invalid(
@@ -4097,10 +4099,13 @@ bool ContextualCheckBlockHeader(const CBlockHeader &block, CValidationState &sta
 {
     const Consensus::Params &consensusParams = Params().GetConsensus();
 
-    const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), Params().GetConsensus());
-    const bool hasStrongPOW = CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus());
+    {
+        LOCK(cs_weakblocks);
+        const bool hasWeakPOW = CheckProofOfWork(block.GetHash(), MinWeakblockProofOfWork(block.nBits), Params().GetConsensus(), weakblocksMinPOWRatio());
+        const bool hasStrongPOW = CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus(), 1);
 
-    *pWeak = hasWeakPOW && !hasStrongPOW;
+        *pWeak = hasWeakPOW && !hasStrongPOW;
+    }
 
     // Check proof of work
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
@@ -4291,15 +4296,19 @@ static bool AcceptBlock(const CBlock &block,
 
     // special handling of weak blocks
     if (isWeak) {
-        if (!weakblocksEnabled()) {
-            LogPrint("weakblocks", "Received weakblocks though weakblocks are disabled. Ignoring.\n");
-            return true;
-        }
-        if (!CheckProofOfWork(block.GetHash(), ConsiderationWeakblockProofOfWork(block.nBits), Params().GetConsensus())) {
-            LogPrint("weakblocks", "Weakblock %s is below consideration threshold. Ignoring.\n", block.GetHash().GetHex());
-            return true;
-        }
+        {
+            LOCK(cs_weakblocks);
 
+            if (!weakblocksEnabled()) {
+                LogPrint("weakblocks", "Received weakblocks though weakblocks are disabled. Ignoring.\n");
+                return true;
+            }
+
+            if (!CheckProofOfWork(block.GetHash(), ConsiderationWeakblockProofOfWork(block.nBits), Params().GetConsensus(), weakblocksConsiderPOWRatio())) {
+                LogPrint("weakblocks", "Weakblock %s is below consideration threshold. Ignoring.\n", block.GetHash().GetHex());
+                return true;
+            }
+        }
         // Get prev block index
         BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
         if (mi == mapBlockIndex.end())

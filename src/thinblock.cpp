@@ -240,9 +240,10 @@ bool CThinBlock::process(CNode *pfrom, int nSizeThinBlock)
     uint256 merkleroot = ComputeMerkleRoot(vTxHashes, &mutated);
     if (header.hashMerkleRoot != merkleroot || mutated)
     {
+        LOCK(cs_weakblocks);
         uint32_t weak_nbits = MinWeakblockProofOfWork(GetNextWorkRequired(chainActive.Tip(), &header, Params().GetConsensus()));
         if (vTxHashes.size() > 0 && CheckProofOfWork(vTxHashes[0],
-                                                     weak_nbits, Params().GetConsensus())) {
+                                                     weak_nbits, Params().GetConsensus(), weakblocksMinPOWRatio())) {
             // Note: Causing this rerequest needs weak work still
             // FIXME: still, guard against replay attacks
             LogPrint("weakblocks", "It seems to be refering to a weak block though, that we're unable to reconstruct from. So request a normal block instead.\n");
@@ -624,8 +625,11 @@ bool CXRequestThinBlockTx::HandleMessage(CDataStream &vRecv, CNode *pfrom)
 
 bool CXThinBlock::CheckBlockHeader(const CBlockHeader &block, CValidationState &state)
 {
+    LOCK(cs_weakblocks);
     // Check proof of work matches claimed amount
-    if (!CheckProofOfWork(header.GetHash(), header.nBits, Params().GetConsensus()))
+    uint32_t weak_nbits = MinWeakblockProofOfWork(header.nBits);
+
+    if (!CheckProofOfWork(header.GetHash(), weak_nbits, Params().GetConsensus(), weakblocksMinPOWRatio()))
         return state.DoS(50, error("CheckBlockHeader(): proof of work failed"), REJECT_INVALID, "high-hash");
 
     // Check timestamp

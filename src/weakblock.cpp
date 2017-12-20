@@ -128,6 +128,8 @@ void resetWeakblocks() {
     weak_transactions.clear();
     weak_confirmations.clear();
     weakblock2header.clear();
+    if (last_req_block != NULL)
+        delete last_req_block;
     last_req_block = NULL;
 }
 

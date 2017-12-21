@@ -54,6 +54,7 @@ const CBlock* blockForWeak(const Weakblock *wb);
 // return a weak block. Caller needs to care for cs_weakblocks
 const Weakblock* getWeakblock(const uint256& hash);
 
+const Weakblock* getLatestWeakblock();
 
 // convenience function around getWeakblock
 inline bool isKnownWeakblock(const uint256& hash) {

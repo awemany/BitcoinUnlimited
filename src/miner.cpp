@@ -27,6 +27,7 @@
 #include "util.h"
 #include "utilmoneystr.h"
 #include "validationinterface.h"
+#include "weakblock.h"
 
 #include <boost/thread.hpp>
 #include <boost/tuple/tuple.hpp>
@@ -202,6 +203,7 @@ CBlockTemplate *BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, bo
             nLockTimeCutoff =
                 (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST) ? nMedianTimePast : pblock->GetBlockTime();
 
+            addFromLatestWeakBlock(pblocktemplate.get());
             addPriorityTxs(pblocktemplate.get());
             addScoreTxs(pblocktemplate.get());
 
@@ -341,6 +343,7 @@ bool BlockAssembler::TestForBlock(CTxMemPool::txiter iter)
 
 void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, CTxMemPool::txiter iter)
 {
+    LogPrint("miner", "Add to block: %s\n", iter->GetTx().GetHash().GetHex());
     pblocktemplate->block.vtx.push_back(iter->GetTx());
     pblocktemplate->vTxFees.push_back(iter->GetFee());
     pblocktemplate->vTxSigOps.push_back(iter->GetSigOpCount());
@@ -359,6 +362,51 @@ void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, CTxMemPool::txit
         LogPrintf("priority %.1f fee %s txid %s\n", dPriority,
             CFeeRate(iter->GetModifiedFee(), iter->GetTxSize()).ToString().c_str(),
             iter->GetTx().GetHash().ToString().c_str());
+    }
+}
+
+/** Add transactions from latest received weak block, in same order as they arrive
+    in the weakblock. */
+void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
+    AssertLockHeld(mempool.cs);
+    LOCK(cs_weakblocks);
+    if (weakblocksEnabled()) {
+        const Weakblock* wb = getLatestWeakblock();
+        if (wb == NULL) {
+            LogPrint("miner", "Not adding weakblock txn - there are no weakblocks available right now.\n");
+            return;
+        }
+        LogPrint("miner", "Adding %d transactions from weak block to block template.\n", wb->size()-1);
+        int i=-1;
+        for (CTransaction* tx : *wb) {
+            i++;
+            if (i==0) {
+                // skip, is coinbase
+                continue;
+            }
+
+            uint256 txid = tx->GetHash();
+
+            CTxMemPool::txiter entry = mempool.mapTx.find(txid);
+
+            if (entry == mempool.mapTx.end()) {
+                // FIXME: what to do here?
+                LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn not in mempool: %s. Skipping.\n", txid.GetHex());
+                continue;
+            }
+
+            if (inBlock.count(entry)) {
+                LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn already in block template: %s.\n", txid.GetHex());
+                continue;
+            }
+            // If this tx fits in the block add it, otherwise keep looping
+            if (TestForBlock(entry)) {
+                AddToBlock(pblocktemplate, entry);
+            } else {
+                LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn not fitting block.\n", txid.GetHex());
+            }
+        }
+        LogPrint("miner", "Done adding transactions from weak block.\n");
     }
 }
 
@@ -483,7 +531,7 @@ void BlockAssembler::addPriorityTxs(CBlockTemplate *pblocktemplate)
         // If tx already in block, skip
         if (inBlock.count(iter))
         {
-            DbgAssert(false, ); // shouldn't happen for priority txs
+            // might happen for prio tx because of stacking onto weakblock
             continue;
         }
 

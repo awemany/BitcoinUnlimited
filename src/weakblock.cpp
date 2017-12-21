@@ -105,6 +105,13 @@ const Weakblock* getWeakblock(const uint256& blockhash) {
     else return NULL;
 }
 
+const Weakblock* getLatestWeakblock() {
+    if (weakblocks.size() > 0)
+        return weakblocks[weakblocks.size()-1];
+    else
+        return NULL;
+}
+
 const CBlock* blockForWeak(const Weakblock *wb) {
     AssertLockHeld(cs_weakblocks);
     if (wb == NULL) return NULL;

@@ -72,6 +72,8 @@ private:
     void AddToBlock(CBlockTemplate *, CTxMemPool::txiter iter);
 
     // Methods for how to add transactions to a block.
+    /** Add transactions from latest weak block. */
+    void addFromLatestWeakBlock(CBlockTemplate *);
     /** Add transactions based on modified feerate */
     void addScoreTxs(CBlockTemplate *);
     /** Add transactions based on tx "priority" */

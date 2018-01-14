@@ -635,6 +635,16 @@ void static BitcoinMiner(const CChainParams &chainparams)
 
             uint256 hash;
             uint32_t nNonce = 0;
+
+
+            // save old weak block to also trigger block rebuild
+            // on incoming new weak blocks
+            Weakblock* old_weakblock;
+            {
+                LOCK(cs_weakblocks);
+                old_weakblock = const_cast<Weakblock*>(getLatestWeakblock());
+            }
+
             while (true)
             {
                 // If weakblocks are enabled, auto generate weakblocks (that can be forwarded according to current local node rules) as well.
@@ -692,6 +702,15 @@ void static BitcoinMiner(const CChainParams &chainparams)
                     LogPrint("miner", "BitcoinMiner: blockchain tip changed\n");
                     break;
                 }
+                // if a new weak block has been found, redo the block as well
+                {
+                    LOCK(cs_weakblocks);
+                    if (old_weakblock != getLatestWeakblock()) {
+                        LogPrint("miner", "BitcoinMiner: New weak block arrived. Recalculating.\n");
+                        break;
+                    }
+                }
+
 
                 // Update nTime every few seconds
                 if (UpdateTime(pblock, chainparams.GetConsensus(), pindexPrev) < 0)

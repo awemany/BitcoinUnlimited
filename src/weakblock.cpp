@@ -218,7 +218,7 @@ const Weakblock* buildsOnWeak(const CBlock &block) {
                 }
                 LogPrint("weakblocks", (l+"\n").c_str());
             }
-#endif          
+#endif
             return NULL;
         }
     }

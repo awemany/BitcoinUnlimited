@@ -343,7 +343,7 @@ bool BlockAssembler::TestForBlock(CTxMemPool::txiter iter)
 
 void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, CTxMemPool::txiter iter)
 {
-    LogPrint("miner", "Add to block: %s\n", iter->GetTx().GetHash().GetHex());
+    //LogPrint("miner", "Add to block: %s\n", iter->GetTx().GetHash().GetHex());
     pblocktemplate->block.vtx.push_back(iter->GetTx());
     pblocktemplate->vTxFees.push_back(iter->GetFee());
     pblocktemplate->vTxSigOps.push_back(iter->GetSigOpCount());

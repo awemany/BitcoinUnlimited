@@ -3,6 +3,7 @@
 #include "tweak.h"
 #include "chainparams.h"
 
+//#define DEBUG_DETAIL 1
 
 // BU tweaks enable and config for weak blocks
 extern CTweak<uint32_t> wbConsiderPOWratio;
@@ -196,12 +197,34 @@ const Weakblock* buildsOnWeak(const CBlock &block) {
     // all except coinbase of the underlying must be included in the new block
     for (size_t i = 1; i < underlying->size(); i++) {
         if (block.vtx[i].GetHash() != (*underlying)[i]->GetHash()) {
-            LogPrint("weakblocks", "New block and latest weakblock differ at pos %d, new: %s, tested weak: %s\n",
-                     i, block.vtx[i].GetHash().GetHex(), underlying_hash.GetHex());
+            LogPrint("weakblocks", "New block and latest weakblock differ at pos %d, new: %s, underlying: %s, tested weak: %s\n",
+                     i, block.vtx[i].GetHash().GetHex(), (*underlying)[i]->GetHash().GetHex(), underlying_hash.GetHex());
+
+#ifdef DEBUG_DETAIL
+            // FIXME: make block debug function
+            LogPrint("weakblocks", "Block transactions:\n");
+            for (size_t c=0; c<block.vtx.size(); c+=10) {
+                std::string l;
+                for (size_t d=c; d<block.vtx.size() && d < c+10; d++) {
+                    l+=" "+block.vtx[d].GetHash().GetHex().substr(0, 7);
+                }
+                LogPrint("weakblocks", (l+"\n").c_str());
+            }
+            LogPrint("weakblocks", "Weakblock transactions:\n");
+            for (size_t c=0; c<underlying->size(); c+=10) {
+                std::string l;
+                for (size_t d=c; d<underlying->size() && d < c+10; d++) {
+                    l+=" "+(*underlying)[i]->GetHash().GetHex().substr(0, 7);
+                }
+                LogPrint("weakblocks", (l+"\n").c_str());
+            }
+#endif          
             return NULL;
         }
     }
-    LogPrint("weakblocks", "Yes, this block is containing all of the weak block's (%s:%d (out of %d weakblocks)) transactions and in the same order.\n",
+    LogPrint("weakblocks", "Yes, this block (%d) is containing all of the weak block's (%d:%s:%d (out of %d weakblocks)) transactions and in the same order.\n",
+             block.vtx.size(),
+             underlying->size(),
              HashForWeak(weakblocks[result]).GetHex(),
              result, weakblocks.size());
     return weakblocks[result];

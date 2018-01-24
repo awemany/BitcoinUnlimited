@@ -3872,8 +3872,8 @@ static bool AcceptBlock(const CBlock &block,
         return true;
     } else {
         // strong block came in - discard all weak ones
-        LogPrint("weakblocks", "Strong block came in - discarding all weak blocks.\n");
-        resetWeakblocks();
+        LogPrint("weakblocks", "Strong block came in - discarding old weak blocks.\n");
+        purgeOldWeakblocks();
     }
 
     LogPrint("parallel", "Check Block %s with chain work %s block height %d\n", pindex->phashBlock->ToString(),

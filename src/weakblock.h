@@ -63,7 +63,7 @@ inline bool isKnownWeakblock(const uint256& hash) {
 }
 
 // remove all weak blocks (in case strong block came in)
-void resetWeakblocks();
+void purgeOldWeakblocks();
 
 // return a map of weak block hashes to the number of confirmations contained therein, in chronological order of receival
 std::vector<std::pair<uint256, size_t> > weakStats();

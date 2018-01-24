@@ -55,6 +55,10 @@ std::map<const Weakblock*, CBlockHeader> weakblock2header;
 // Chronologically sorted weak blocks
 std::vector<Weakblock*> weakblocks;
 
+// weak blocks until this 'weak block height'-1 are deleted with
+// the next strong block confirmation
+static size_t purge_height=0;
+
 // last returned CBlock
 CBlock *last_req_block=NULL;
 
@@ -107,7 +111,7 @@ const Weakblock* getWeakblock(const uint256& blockhash) {
 }
 
 const Weakblock* getLatestWeakblock() {
-    if (weakblocks.size() > 0)
+    if (weakblocks.size() > purge_height)
         return weakblocks[weakblocks.size()-1];
     else
         return NULL;
@@ -126,19 +130,33 @@ const CBlock* blockForWeak(const Weakblock *wb) {
     }
 }
 
-void resetWeakblocks() {
+void purgeOldWeakblocks() {
     LOCK(cs_weakblocks);
-    for (Weakblock* wb : weakblocks)
-        delete wb;
-    weakblocks.clear();
-    hash2weakblock.clear();
-    weakblock2hash.clear();
-    weak_transactions.clear();
-    weak_confirmations.clear();
-    weakblock2header.clear();
+
     if (last_req_block != NULL)
         delete last_req_block;
     last_req_block = NULL;
+
+    for (size_t height = 0; height < purge_height; height++) {
+        Weakblock* wb = weakblocks[0];
+        uint256 blockhash = weakblock2hash[wb];
+
+        for (const CTransaction* tx : *wb) {
+            uint256  txhash=tx->GetHash();
+            weak_confirmations[txhash]--;
+            if (weak_confirmations[txhash] == 0) {
+                weak_transactions.erase(txhash);
+                weak_confirmations.erase(txhash);
+            }
+        }
+
+        weakblocks.erase(weakblocks.begin());
+        hash2weakblock.erase(blockhash);
+        weakblock2header.erase(wb);
+        weakblock2hash.erase(wb);
+        delete wb;
+    }
+    purge_height = weakblocks.size();
 }
 
 std::vector<std::pair<uint256, size_t> > weakStats() {

@@ -47,9 +47,10 @@ std::map<uint256, CTransaction> weak_transactions;
 // map from block hash to weak block.
 std::map<uint256, Weakblock*> hash2weakblock;
 
-// map from weak block pointer to hash
+// map from weak block memory location to hash
 std::map<const Weakblock*, uint256> weakblock2hash;
 
+// map from weakblock memory location to header
 std::map<const Weakblock*, CBlockHeader> weakblock2header;
 
 // Chronologically sorted weak blocks

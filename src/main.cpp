@@ -3871,7 +3871,7 @@ static bool AcceptBlock(const CBlock &block,
         // and done - don't store this weakBlock in any of the indices etc.
         return true;
     } else {
-        // strong block came in - discard all weak ones
+        // strong block came in - discard weak ones coming before the last strong block
         LogPrint("weakblocks", "Strong block came in - discarding old weak blocks.\n");
         purgeOldWeakblocks();
     }

@@ -265,7 +265,7 @@ bool BlockAssembler::isStillDependent(CTxMemPool::txiter iter)
     AssertLockHeld(mempool.cs);
     BOOST_FOREACH (CTxMemPool::txiter parent, mempool.GetMemPoolParents(iter))
     {
-        if (!inBlock.count(parent))
+        if (!inBlock.count(parent->GetTx().GetHash()))
         {
             return true;
         }
@@ -351,7 +351,7 @@ void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, CTxMemPool::txit
     ++nBlockTx;
     nBlockSigOps += iter->GetSigOpCount();
     nFees += iter->GetFee();
-    inBlock.insert(iter);
+    inBlock.insert(iter->GetTx().GetHash());
 
     bool fPrintPriority = GetBoolArg("-printpriority", DEFAULT_PRINTPRIORITY);
     if (fPrintPriority)
@@ -395,7 +395,7 @@ void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
                 continue;
             }
 
-            if (inBlock.count(entry)) {
+            if (inBlock.count(entry->GetTx().GetHash())) {
                 LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn already in block template: %s.\n", txid.GetHex());
                 continue;
             }
@@ -436,7 +436,7 @@ void BlockAssembler::addScoreTxs(CBlockTemplate *pblocktemplate)
         }
 
         // If tx already in block, skip  (added by addPriorityTxs)
-        if (inBlock.count(iter))
+        if (inBlock.count(iter->GetTx().GetHash()))
         {
             continue;
         }
@@ -529,7 +529,7 @@ void BlockAssembler::addPriorityTxs(CBlockTemplate *pblocktemplate)
         vecPriority.pop_back();
 
         // If tx already in block, skip
-        if (inBlock.count(iter))
+        if (inBlock.count(iter->GetTx().GetHash()))
         {
             // might happen for prio tx because of stacking onto weakblock
             continue;

@@ -47,7 +47,7 @@ private:
     uint64_t nBlockTx;
     unsigned int nBlockSigOps;
     CAmount nFees;
-    CTxMemPool::setEntries inBlock;
+    std::set<uint256> inBlock;
 
     // Chain context for the block
     int nHeight;

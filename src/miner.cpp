@@ -327,7 +327,7 @@ bool BlockAssembler::IsIncrementallyGood(uint64_t nExtraSize, unsigned int nExtr
     return true;
 }
 
-bool BlockAssembler::TestForBlock(CTxMemPool::txiter iter)
+bool BlockAssembler::TestForBlock(const CTxMemPoolEntry* iter)
 {
     if (!IsIncrementallyGood(iter->GetTxSize(), iter->GetSigOpCount()))
         return false;
@@ -341,7 +341,7 @@ bool BlockAssembler::TestForBlock(CTxMemPool::txiter iter)
     return true;
 }
 
-void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, CTxMemPool::txiter iter)
+void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, const CTxMemPoolEntry* iter)
 {
     //LogPrint("miner", "Add to block: %s\n", iter->GetTx().GetHash().GetHex());
     pblocktemplate->block.vtx.push_back(iter->GetTx());
@@ -400,8 +400,8 @@ void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
                 continue;
             }
             // If this tx fits in the block add it, otherwise keep looping
-            if (TestForBlock(entry)) {
-                AddToBlock(pblocktemplate, entry);
+            if (TestForBlock(&*entry)) {  // *iter != NULL due to while loop condition
+                AddToBlock(pblocktemplate, &*entry);
             } else {
                 LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn not fitting block.\n", txid.GetHex());
             }
@@ -473,9 +473,9 @@ void BlockAssembler::addScoreTxs(CBlockTemplate *pblocktemplate)
         }
 
         // If this tx fits in the block add it, otherwise keep looping
-        if (TestForBlock(iter))
+        if (TestForBlock(&*iter))  // *iter != NULL due to while loop condition
         {
-            AddToBlock(pblocktemplate, iter);
+            AddToBlock(pblocktemplate, &*iter);
 
             // This tx was successfully added, so
             // add transactions that depend on this one to the priority queue to try again
@@ -560,9 +560,9 @@ void BlockAssembler::addPriorityTxs(CBlockTemplate *pblocktemplate)
         }
 
         // If this tx fits in the block add it, otherwise keep looping
-        if (TestForBlock(iter))
+        if (TestForBlock(&*iter)) // *iter != NULL due to while loop condition
         {
-            AddToBlock(pblocktemplate, iter);
+            AddToBlock(pblocktemplate, &*iter);
 
             // If now that this txs is added we've surpassed our desired priority size
             // or have dropped below the AllowFreeThreshold, then we're done adding priority txs

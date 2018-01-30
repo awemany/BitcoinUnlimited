@@ -69,7 +69,7 @@ private:
     /** Clear the block's state and prepare for assembling a new block */
     void resetBlock(const CScript &scriptPubKeyIn);
     /** Add a tx to the block */
-    void AddToBlock(CBlockTemplate *, CTxMemPool::txiter iter);
+    void AddToBlock(CBlockTemplate *, const CTxMemPoolEntry* iter);
 
     // Methods for how to add transactions to a block.
     /** Add transactions from latest weak block. */
@@ -82,7 +82,7 @@ private:
     // helper function for addScoreTxs and addPriorityTxs
     bool IsIncrementallyGood(uint64_t nExtraSize, unsigned int nExtraSigOps);
     /** Test if tx will still "fit" in the block */
-    bool TestForBlock(CTxMemPool::txiter iter);
+    bool TestForBlock(const CTxMemPoolEntry* iter);
     /** Test if tx still has unconfirmed parents not yet in block */
     bool isStillDependent(CTxMemPool::txiter iter);
     /** Bytes to reserve for coinbase and block header */

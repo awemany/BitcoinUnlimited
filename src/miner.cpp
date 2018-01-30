@@ -91,6 +91,14 @@ BlockAssembler::BlockAssembler(const CChainParams &_chainparams)
     nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
 }
 
+BlockAssembler::~BlockAssembler() {
+    LogPrint("miner", "Freeing %d temporary pseudo mempool entries.\n", temp_entries.size());
+    for (std::pair<uint256, CTxMemPoolEntry*> p : temp_entries) {
+        delete p.second;
+    }
+}
+
+
 void BlockAssembler::resetBlock(const CScript &scriptPubKeyIn)
 {
     inBlock.clear();
@@ -387,12 +395,45 @@ void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
 
             uint256 txid = tx->GetHash();
 
-            CTxMemPool::txiter entry = mempool.mapTx.find(txid);
+            CTxMemPool::txiter entry_iter = mempool.mapTx.find(txid);
 
-            if (entry == mempool.mapTx.end()) {
-                // FIXME: what to do here?
-                LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn not in mempool: %s. Skipping.\n", txid.GetHex());
-                continue;
+            CTxMemPoolEntry* entry = NULL;
+
+            if (entry_iter == mempool.mapTx.end()) {
+                if (temp_entries.find(txid) != temp_entries.end()) {
+                    LogPrint("miner", "Weak txn not in mempool: %s. Reusing from pseudo mempool cache.\n", txid.GetHex());
+                    entry = temp_entries[txid];
+                } else {
+                    LogPrint("miner", "Weak txn not in mempool: %s. (Re-)building info.\n", txid.GetHex());
+                    LOCK(cs_main);
+                    CCoinsViewCache view(pcoinsTip);
+                    // need to fill a new, temporary CTxMemPoolEntry with
+                    // correct info for fees, size and sigop count.
+                    // FIXME: some code duplication with what happens in
+                    // unlimited.cpp::ParallelAcceptToMemoryPool(..)
+
+                    CAmount nValueIn = view.GetValueIn(*tx);
+                    CAmount nValueOut = tx->GetValueOut();
+                    CAmount nFees = nValueIn - nValueOut;
+
+                    unsigned nSigOps = GetLegacySigOpCount(*tx);
+                    nSigOps += GetP2SHSigOpCount(*tx, view);
+
+                    entry = new CTxMemPoolEntry(*tx,
+                                                nFees,
+                                                0,  // dummy insertion time
+                                                0.0, // dummy priority,
+                                                0, // dummy height,
+                                                false, // dummy poolHasNoInputsOf,
+                                                CAmount(0), // dummy inChainInputValue
+                                                false, // dummy spendsCoinbase
+                                                nSigOps,
+                                                LockPoints() // dummy lock points
+                        );
+                    temp_entries[txid] = entry;
+                }
+            } else {
+                entry = const_cast<CTxMemPoolEntry*>(&*entry_iter);
             }
 
             if (inBlock.count(entry->GetTx().GetHash())) {

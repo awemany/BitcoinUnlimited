@@ -59,8 +59,11 @@ private:
 
     bool buip055ChainBlock;
 
+    std::map<uint256, CTxMemPoolEntry*> temp_entries;
+
 public:
     BlockAssembler(const CChainParams &chainparams);
+    ~BlockAssembler();
     /** Construct a new block template with coinbase to scriptPubKeyIn */
     CBlockTemplate *CreateNewBlock(const CScript &scriptPubKeyIn);
 

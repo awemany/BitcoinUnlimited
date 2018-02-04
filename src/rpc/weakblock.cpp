@@ -12,6 +12,8 @@
 using namespace std;
 
 UniValue weakstats(const UniValue& params, bool fHelp) {
+    throw runtime_error("Disabled for now. FIXME\n");
+
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "weakstats\n"
@@ -19,18 +21,19 @@ UniValue weakstats(const UniValue& params, bool fHelp) {
 
     // FIXME: make the results nicer and more informative
     UniValue result(UniValue::VOBJ);
-
+/*
     std::vector<std::pair<uint256, size_t> > wstats = weakStats();
 
     // order by receival time
     for (std::pair<uint256, size_t> p : wstats)
         result.push_back(Pair(p.first.GetHex(), p.second));
 
-    return result;
+        return result;*/
 }
 
 UniValue weakconfirmations(const UniValue& params, bool fHelp)
 {
+    throw runtime_error("Disabled for now. FIXME\n");
     if (fHelp || params.size() < 1)
         throw runtime_error(
             "weakconfirmations \"hexstring\"\n"
@@ -44,7 +47,7 @@ UniValue weakconfirmations(const UniValue& params, bool fHelp)
     std::string txid_hex = params[0].get_str();
 
     uint256 hash = ParseHashV(params[0], "parameter 1");
-    return weakConfirmations(hash);
+    //return weakConfirmations(hash);
 }
 
 static const CRPCCommand commands[] =

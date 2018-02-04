@@ -642,7 +642,7 @@ void static BitcoinMiner(const CChainParams &chainparams)
             Weakblock* old_weakblock;
             {
                 LOCK(cs_weakblocks);
-                old_weakblock = const_cast<Weakblock*>(getLatestWeakblock());
+                old_weakblock = const_cast<Weakblock*>(getWeakLongestChainTip());
             }
 
             while (true)
@@ -705,7 +705,7 @@ void static BitcoinMiner(const CChainParams &chainparams)
                 // if a new weak block has been found, redo the block as well
                 {
                     LOCK(cs_weakblocks);
-                    if (old_weakblock != getLatestWeakblock()) {
+                    if (old_weakblock != getWeakLongestChainTip()) {
                         LogPrint("miner", "BitcoinMiner: New weak block arrived. Recalculating.\n");
                         break;
                     }

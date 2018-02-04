@@ -379,7 +379,7 @@ void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
     AssertLockHeld(mempool.cs);
     LOCK(cs_weakblocks);
     if (weakblocksEnabled()) {
-        const Weakblock* wb = getLatestWeakblock();
+        const Weakblock* wb = getWeakLongestChainTip();
         if (wb == NULL) {
             LogPrint("miner", "Not adding weakblock txn - there are no weakblocks available right now.\n");
             return;

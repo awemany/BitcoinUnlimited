@@ -5,16 +5,12 @@
 #ifndef BITCOIN_WEAKBLOCK_H
 #define BITCOIN_WEAKBLOCK_H
 
-#include <map>
 #include "uint256.h"
 #include "consensus/params.h"
 #include "pow.h"
 #include "primitives/block.h"
 #include "primitives/transaction.h"
 #include "sync.h"
-
-// FIXME: Weakblocks and mempool?
-// FIXME: Weakblocks and mempool and getblocktemplate?
 
 const uint32_t DEFAULT_WEAKBLOCKS_CONSIDER_POW_RATIO=30;
 const bool DEFAULT_WEAKBLOCKS_ENABLE=true;
@@ -25,14 +21,6 @@ uint32_t weakblocksConsiderPOWRatio();
 // absolute minimum POW target multiplicator - below this, also weak blocks are considered invalid and nodes sending those are penalized and banned
 uint32_t weakblocksMinPOWRatio();
 
-// Weak blocks data structures
-//! Map TXID to weak blocks containing them
-//extern std::multimap<uint256, CBlock*> txid2weakblock;
-//! The received weak blocks since the last strong one, indexed by their hash
-//extern std::map<uint256, CBlock*> hash2weakblock;
-//! Weak blocks in order of receival
-//extern std::vector<CBlock*> weakblocks;
-
 //! protects all of the above data structures
 extern CCriticalSection cs_weakblocks;
 
@@ -41,20 +29,22 @@ extern CCriticalSection cs_weakblocks;
 // each weak block
 typedef std::vector<CTransaction*> Weakblock;
 
-// store a weak block return true iff the block was stored, false if it already exists
+bool weakExtends(const Weakblock* under, const Weakblock* wb);
+
+// store CBlock as a weak block return  iff the block was stored, false if it already exists
 bool storeWeakblock(const CBlock &block);
 
 // return pointer to a CBlock if a given hash is a stored, or NULL
 // returned block needs to be handled with cs_weakblocks locked
 // responsibility of memory management is internal to weakblocks module
-// the returned block is valid until the next call to getWeakblock
+// the returned block is valid until the next call to purgeOldWeakblocks
 const CBlock* blockForWeak(const Weakblock *wb);
-
 
 // return a weak block. Caller needs to care for cs_weakblocks
 const Weakblock* getWeakblock(const uint256& hash);
 
-const Weakblock* getLatestWeakblock();
+// give hash of a weak block. Needs to be cs_weakblocks locked
+const uint256 HashForWeak(const Weakblock* wb);
 
 // convenience function around getWeakblock
 inline bool isKnownWeakblock(const uint256& hash) {
@@ -62,23 +52,46 @@ inline bool isKnownWeakblock(const uint256& hash) {
     return getWeakblock(hash) != NULL;
 }
 
-// remove all weak blocks (in case strong block came in)
-void purgeOldWeakblocks();
+/*! Return the weak height of a weakblock
+  The height is the number of weak blocks that come before this one.
+Needs to be called with cs_weakblocks locked. */
+int weakHeight(const Weakblock*);
 
-// return a map of weak block hashes to the number of confirmations contained therein, in chronological order of receival
-std::vector<std::pair<uint256, size_t> > weakStats();
+/*! Return block from longest and earliest weak chain
+  Can return NULL if there is no weak block chain available. */
+const Weakblock* getWeakLongestChainTip();
 
-// Test whether a given block builds on top of an available weak block,
-// if so, return a pointer to that block. Else return NULL.
-// (Building on top means: All transactions in a weak block are contained
-// in the given block, in the same order, except for the coinbase transaction)
-// FIXME: This operation is currently O(<#txn>)
+// remove old weak blocks after a while and leave only the given number of chaintips (default is used if -1 is given)
+void purgeOldWeakblocks(int leave_tips = -1);
+
+// return a map of weak block hashes to their weak block height, in chronological order of receival
+std::vector<std::pair<uint256, size_t> > weakChainTips();
+
+// return block minimally extending the given weak block (or NULL)
 // This needs to be handled with cs_weakblocks locked
-const Weakblock* buildsOnWeak(const CBlock &block);
+const Weakblock* miniextendsWeak(const Weakblock *block);
 
-// give the number of weak blocks a transaction is in
-size_t weakConfirmations(const uint256& txid);
+// currently known number of weak blocks
+int numKnownWeakblocks();
 
-// give hash of a weak block. Needs to be cs_weakblocks locked
-const uint256 HashForWeak(const Weakblock* wb);
+// currently known number of transactions appearing in weak blocks
+int numKnownWeakblockTransactions();
+
+//! Internal consistency check
+/*! To be used only for testing / debugging.
+  For each weak block that is registered, this checks that:
+  - hash2weakblock and weakblock2hash are consistent
+  - it miniextends the block that miniextends says it does.
+  - it extends only blocks that can be reached through the miniextends DAG
+
+  It also checks that getWeakLongestChainTip() is indeed pointing to one of
+  the longest chains of weakblocks.
+
+  Runtime is O(<number-of-weak-blocks>^2)
+*/
+void weakblocksConsistencyCheck();
+
+//! Consistency check that all internal data structures are empty
+void weakblocksEmptyCheck();
+
 #endif

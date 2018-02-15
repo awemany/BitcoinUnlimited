@@ -483,8 +483,8 @@ libbitcoinpy_a_SOURCES += $(crypto_libbitcoin_crypto_a_SOURCES)
 libbitcoinpy_a_CPPFLAGS = $(AM_CPPFLAGS) $(PYTHON_CPPFLAGS) $(libbitcoin_server_a_CPPFLAGS)
 libbitcoinpy_a_CXXFLAGS = $(AM_CPPFLAGS) -fPIC $(PYTHON_CPPFLAGS) $(BITCOIN_INCLUDES)
 
-bitcoinpy_PYTHON_SHARED = _coreio.so _script.so _primitives.so
-bitcoinpy_PYTHON_GENERATED = coreio.py script.py primitives.py
+bitcoinpy_PYTHON_SHARED = _coreio.so _script.so _primitives.so _util.so
+bitcoinpy_PYTHON_GENERATED = coreio.py script.py primitives.py util.so
 bitcoinpy_PYTHON_PYC = $(bitcoinpy_PYTHON_GENERATED:.py=.pyc)
 
 noinst_PROGRAMS += $(bitcoinpy_PYTHON_SHARED)
@@ -522,6 +522,12 @@ _primitives_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
 _primitives_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
 _primitives.so$(EXEEXT): $(_primitives_so_OBJECTS) $(PYTHON_MODULE_DEPS)
 	$(CXX) -o $@ $(_primitives_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
+
+_util_so_SOURCES = util_wrap.cxx
+_util_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
+_util_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
+_util.so$(EXEEXT): $(_util_so_OBJECTS) $(PYTHON_MODULE_DEPS)
+	$(CXX) -o $@ $(_util_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
 
 endif
 

@@ -2,5 +2,6 @@ coreio.py
 script.py
 primitives.py
 util.py
+weakblock.py
 *_wrap.cxx
 *.so

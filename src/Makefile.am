@@ -464,7 +464,7 @@ libbitcoinconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
 endif
 
-%_wrap.cxx %.py: %.i
+%_wrap.cxx %.py: %.i defaults.i $(BITCOIN_CORE_H)
 	$(SWIG) -python $(AX_SWIG_PYTHON_CPPFLAGS) $<
 
 
@@ -489,11 +489,13 @@ bitcoinpy_PYTHON_PYC = $(bitcoinpy_PYTHON_GENERATED:.py=.pyc)
 
 noinst_PROGRAMS += $(bitcoinpy_PYTHON_SHARED)
 
+libbitcoinpy.so: libbitcoinpy.a $(libbitcoinpy_a_OBJECTS)
+	$(CXX) -shared $^ -o $@
 
 PYTHON_MODULE_LINK_OPTIONS=\
 	$(libbitcoinpy_a_LDFLAGS) \
 	-fPIC -shared $(AM_LDFLAGS) $(PYTHON_EXTRA_LDFLAGS) $(RELDFLAGS) $(LIBTOOL_APP_LDFLAGS) \
-	libbitcoinpy.a \
+	libbitcoinpy.so \
 	./univalue/.libs/libunivalue.a \
 	./secp256k1/.libs/libsecp256k1.a \
 	./leveldb/libleveldb.a \
@@ -503,7 +505,7 @@ PYTHON_MODULE_LINK_OPTIONS=\
 
 PYTHON_MODULE_CPPFLAGS = $(AM_CPPFLAGS) $(PYTHON_CPPFLAGS) $(libbitcoin_server_a_CPPFLAGS)
 PYTHON_MODULE_CXXFLAGS = -fPIC $(PYTHON_CPPFLAGS) $(AM_CPPFLAGS)
-PYTHON_MODULE_DEPS     = libbitcoinpy.a $(LIBUNIVALUE) $(LIBSECP256K1) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV)
+PYTHON_MODULE_DEPS     = libbitcoinpy.so $(LIBUNIVALUE) $(LIBSECP256K1) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV)
 
 _coreio_so_SOURCES = coreio_wrap.cxx
 _coreio_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
@@ -540,7 +542,7 @@ CTAES_DIST += crypto/ctaes/ctaes.h
 CTAES_DIST += crypto/ctaes/README.md
 CTAES_DIST += crypto/ctaes/test.c
 
-CLEANFILES += $(bitcoinpy_PYTHON_SHARED) $(bitcoinpy_PYTHON_GENERATED) $(bitcoinpy_PYTHON_PYC)
+CLEANFILES += $(bitcoinpy_PYTHON_SHARED) $(bitcoinpy_PYTHON_GENERATED) $(bitcoinpy_PYTHON_PYC) libbitcoinpy.so
 CLEANFILES += *_wrap.cxx
 CLEANFILES += *.gcda *.gcno
 CLEANFILES += compat/*.gcda compat/*.gcno

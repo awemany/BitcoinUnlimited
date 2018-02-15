@@ -9,8 +9,14 @@
 %include "primitives/transaction.h"
 %include "primitives/block.h"
 
+
 %{
     #include "uint256.h"
     #include "primitives/transaction.h"
+%}
+
+%template(transactionVector) std::vector<CTransaction>;
+
+%{
     #include "primitives/block.h"
 %}

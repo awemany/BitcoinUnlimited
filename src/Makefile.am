@@ -531,6 +531,8 @@ _util_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
 _util.so$(EXEEXT): $(_util_so_OBJECTS) $(PYTHON_MODULE_DEPS)
 	$(CXX) -o $@ $(_util_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
 
+python-modules: $(bitcoinpy_PYTHON_SHARED)
+
 endif
 
 #

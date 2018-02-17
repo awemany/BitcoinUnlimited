@@ -26,6 +26,7 @@
 #include "unlimited.h"
 #include "util.h"
 #include "utilmoneystr.h"
+#include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "weakblock.h"
 
@@ -126,22 +127,32 @@ uint64_t BlockAssembler::reserveBlockSize(const CScript &scriptPubKeyIn)
 
     // This serializes with output value, a fixed-length 8 byte field, of zero and height, a serialized CScript
     // signed integer taking up 4 bytes for heights 32768-8388607 (around the year 2167) after which it will use 5.
-    nCoinbaseSize = ::GetSerializeSize(coinbaseTx(scriptPubKeyIn, 400000, 0), SER_NETWORK, PROTOCOL_VERSION);
+    nCoinbaseSize = ::GetSerializeSize(coinbaseTx(scriptPubKeyIn, 400000, 0, uint256()), SER_NETWORK, PROTOCOL_VERSION);
 
     // BU Miners take the block we give them, wipe away our coinbase and add their own.
     // So if their reserve choice is bigger then our coinbase then use that.
     return nHeaderSize + std::max(nCoinbaseSize, coinbaseReserve.value);
 }
 
-CMutableTransaction BlockAssembler::coinbaseTx(const CScript &scriptPubKeyIn, int nHeight, CAmount nValue)
+CMutableTransaction BlockAssembler::coinbaseTx(const CScript &scriptPubKeyIn, int nHeight, CAmount nValue, uint256 weakhash)
 {
     CMutableTransaction tx;
 
     tx.vin.resize(1);
     tx.vin[0].prevout.SetNull();
-    tx.vout.resize(1);
+    tx.vout.resize(2);
     tx.vout[0].scriptPubKey = scriptPubKeyIn;
     tx.vout[0].nValue = nValue;
+
+    tx.vout[1].nValue = 0;
+    tx.vout[1].scriptPubKey = CScript() << OP_RETURN;
+    tx.vout[1].scriptPubKey.push_back(0x22); // size byte
+    tx.vout[1].scriptPubKey.push_back('W'); // marker
+    tx.vout[1].scriptPubKey.push_back('B');
+    tx.vout[1].scriptPubKey.insert(tx.vout[1].scriptPubKey.end(),
+                                   weakhash.begin(),
+                                   weakhash.end());
+
     tx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
     // BU005 add block size settings to the coinbase
@@ -220,9 +231,16 @@ CBlockTemplate *BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, bo
             LogPrintf("CreateNewBlock(): total size %llu txs: %llu fees: %lld sigops %u\n", nBlockSize, nBlockTx, nFees,
                 nBlockSigOps);
 
+            const Weakblock* weak_tip = getWeakLongestChainTip();
+            uint256 weakref;
+
+            if (weak_tip != NULL) {
+                weakref = HashForWeak(weak_tip);
+            }
+
             // Create coinbase transaction.
             pblock->vtx[0] =
-                coinbaseTx(scriptPubKeyIn, nHeight, nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus()));
+                coinbaseTx(scriptPubKeyIn, nHeight, nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus()), weakref);
             pblocktemplate->vTxFees[0] = -nFees;
 
             // Fill in header

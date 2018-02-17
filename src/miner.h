@@ -93,7 +93,7 @@ private:
     /** Internal method to construct a new block template */
     CBlockTemplate *CreateNewBlock(const CScript &scriptPubKeyIn, bool blockstreamCoreCompatible);
     /** Constructs a coinbase transaction */
-    CMutableTransaction coinbaseTx(const CScript &scriptPubKeyIn, int nHeight, CAmount nValue);
+    CMutableTransaction coinbaseTx(const CScript &scriptPubKeyIn, int nHeight, CAmount nValue, uint256 weakref);
 };
 
 /** Modify the extranonce in a block */

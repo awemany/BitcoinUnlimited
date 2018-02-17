@@ -16,6 +16,9 @@
 %}
 
 %template(transactionVector) std::vector<CTransaction>;
+%template(txInVector) std::vector<CTxIn>;
+%template(txOutVector) std::vector<CTxOut>;
+
 
 %{
     #include "primitives/block.h"

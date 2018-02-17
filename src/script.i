@@ -7,6 +7,8 @@
 
 %template(byte_vector) std::vector<unsigned char>;
 
+%rename("extend") CScript::operator <<;
+
 %include "prevector.h"
 %include "script/script.h"
 

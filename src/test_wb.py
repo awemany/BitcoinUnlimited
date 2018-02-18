@@ -7,6 +7,7 @@ import primitives
 import coreio
 import script
 import util
+import codecs
 
 # switch on debugging output to console
 util.cvar.fPrintToConsole = True
@@ -69,9 +70,31 @@ def randomBlock(underlying=None, num_txn=10):
     block.hashMerkleRoot = rand256()
     assert num_txn > 0
 
-    block.vtx.push_back(randomTxn())
+    if underlying is None:
+        # block without a valid coinbase ptr
+        block.vtx.push_back(randomTxn())
+    else:
+        if isinstance(underlying, primitives.CBlock):
+            underlyinghash = underlying.GetHash()
+        else:
+            underlyinghash = underlying
 
-    if underlying is not None:
+        fake_cb = primitives.CTransaction()
+
+        # FIXME: need to keep intermediate pointers to avoid deallocation problems
+        retscript = [script.CScript()]
+        retscript.append(retscript[-1].extend(script.OP_RETURN))
+        b=[ord('W'), ord('B')]
+        for x in bytearray(codecs.decode(underlyinghash.GetHex(), "hex"))[::-1]:
+            b.append(x)
+        retscript.append(retscript[-1].extend(script.byte_vector(b)))
+
+        fake_out = primitives.CTxOut()
+        fake_out.scriptPubKey = retscript[-1]
+        fake_cb.vout.push_back(fake_out)
+        block.vtx.push_back(fake_cb)
+
+    if underlying is not None and isinstance(underlying, primitives.CBlock):
         for tx in underlying.vtx[1:]:
             block.vtx.push_back(tx)
 
@@ -91,10 +114,10 @@ assert blockForWeak(None) is None
 assert getWeakblock(null256) is None
 assert primitives.Equals(HashForWeak(None), null256)
 assert not isKnownWeakblock(null256)
-assert weakHeight(None) == -1
+assert weakHeight(null256) == -1
 
 assert getWeakLongestChainTip() is None
-assert miniextendsWeak(None) is None
+assert underlyingWeak(None) is None
 weakblocksConsistencyCheck()
 
 # weak block test tree scenarios (list of CBlocks that should
@@ -134,22 +157,29 @@ def setName(w, name):
     names[HashForWeak(w).GetHex()] = name
 
 
-def insertBlocks(blocks):
+def insertBlocks(blocks, check_store=True):
     for idx, block in enumerate(blocks):
         util.LogPrint("weakblocks", str((numKnownWeakblocks(), numKnownWeakblockTransactions(), weakChainTips().size(), idx))+"\n")
-        assert idx == numKnownWeakblocks()
+        if check_store:
+            assert idx == numKnownWeakblocks()
 
-        assert storeWeakblock(block)
+        store_result = storeWeakblock(block)
+
+        if check_store:
+            assert store_result
 
         # storing repeatedly fails
         assert not storeWeakblock(block)
 
         wb = getWeakblock(block.GetHash())
 
-        util.LogPrint("weakblocks", str((block, wb, weakHeight(wb)))+"\n")
-        weakblocksConsistencyCheck()
-        util.LogPrint("weakblocks", str(
-            ("Current longest chain:", HashForWeak(getWeakLongestChainTip()).GetHex()))+"\n")
+        if wb is None:
+            assert not store_result
+        else:
+            util.LogPrint("weakblocks", str((block, wb, weakHeight(wb)))+"\n")
+            weakblocksConsistencyCheck()
+            util.LogPrint("weakblocks", str(
+                ("Current longest chain:", HashForWeak(getWeakLongestChainTip()).GetHex()))+"\n")
 
 
 def insertScenario1(shuffle=False):
@@ -158,28 +188,28 @@ def insertScenario1(shuffle=False):
     sinsert = s1.copy()
     if shuffle:
         random.shuffle(sinsert)
-    insertBlocks(sinsert)
+    insertBlocks(sinsert, not shuffle)
 
     for w, letter in zip([getWeakblock(block.GetHash()) for block in s1], "abcdefghijk"):
         setName(w, letter)
 
     wa,wb,wc,wd,we,wf,wg,wh,wi,wj,wk = [getWeakblock(block.GetHash()) for block in s1]
 
-    assert miniextendsWeak(wa) is None
-    assert miniextendsWeak(wb) == wa
-    assert miniextendsWeak(wc) == wb
-    assert miniextendsWeak(wd) == wb
-    assert miniextendsWeak(we) == wd
-    assert miniextendsWeak(wf) == wd
-
-    assert miniextendsWeak(wg) is None
-
-    assert miniextendsWeak(wh) is None
-    assert miniextendsWeak(wi) == wh
-    assert miniextendsWeak(wj) == wh
-    assert miniextendsWeak(wk) == wj
-
     if not shuffle:
+        assert underlyingWeak(wa) is None
+        assert underlyingWeak(wb) == wa
+        assert underlyingWeak(wc) == wb
+        assert underlyingWeak(wd) == wb
+        assert underlyingWeak(we) == wd
+        assert underlyingWeak(wf) == wd
+
+        assert underlyingWeak(wg) is None
+
+        assert underlyingWeak(wh) is None
+        assert underlyingWeak(wi) == wh
+        assert underlyingWeak(wj) == wh
+        assert underlyingWeak(wk) == wj
+
         assert getWeakLongestChainTip() == we
 
     return s1
@@ -194,7 +224,7 @@ def printDAG(blocks):
 
     for block in blocks:
         wb = getWeakblock(block.GetHash())
-        owb = miniextendsWeak(wb)
+        owb = underlyingWeak(wb)
         if owb is not None:
             util.LogPrint("weakblocks", names[HashForWeak(wb).GetHex()]+" :> "+names[HashForWeak(owb).GetHex()]+"\n")
         else:
@@ -202,59 +232,55 @@ def printDAG(blocks):
 
 for i in range(10): # repeat to test ref counting and internal structure stuff
     blocks = insertScenario1()
-    printDAG(blocks)
+    #printDAG(blocks)
     purgeOldWeakblocks(0)
     weakblocksConsistencyCheck()
     weakblocksEmptyCheck()
+
+# check that invalid references are rejected
+util.LogPrint("weakblocks", "TEST INVALID\n")
+blk1 = randomBlock()
+blk2 = randomBlock(underlying = blk1.GetHash())
+assert storeWeakblock(blk1)
+assert not storeWeakblock(blk2)
+weakblocksConsistencyCheck()
+purgeOldWeakblocks(0)
+weakblocksEmptyCheck()
+
 
 util.LogPrint("weakblocks", "RANDOMIZED\n")
 for i in range(50):
     blocks = insertScenario1(shuffle=True)
-    printDAG(blocks)
+    #printDAG(blocks)
     purgeOldWeakblocks(0)
     weakblocksConsistencyCheck()
     weakblocksEmptyCheck()
 
-def testRandomDAG():
-    """ Create a random block graph, then insert it in a random (and usually different) order
-    and check that the original DAG results. """
+def testRandom():
+    """ Create a random block graph, then insert it in a random order
+    and check consistency. """
 
     # number of blocks
     N = 20
 
-    # block with key mini-extends block with value
-    miniextends={}
 
     blocks=[]
 
     # building logic for the DAG is biased in all kinds of ways, but that shouldn't matter too much
     for n in range(N):
         underlying_idx = random.randint(-1, len(blocks)-1)
-
         underlying = None if underlying_idx < 0 else blocks[underlying_idx]
-
-        if underlying is not None:
-            miniextends[n] = underlying_idx
         block=randomBlock(underlying)
         blocks.append(block)
 
     to_insert=blocks.copy()
     random.shuffle(to_insert)
 
-    insertBlocks(to_insert)
-
-    for n in range(N):
-        wb1 = getWeakblock(blocks[n].GetHash())
-        wb2 = miniextendsWeak(wb1)
-
-        if wb2 is None: # root
-            assert n not in miniextends
-        else:
-            assert primitives.Equals(HashForWeak(wb2), blocks[miniextends[n]].GetHash())
+    insertBlocks(to_insert, False)
     purgeOldWeakblocks(0)
     weakblocksConsistencyCheck()
     weakblocksEmptyCheck()
 
 for i in range(1000):
     print("@", i)
-    testRandomDAG()
+    testRandom()

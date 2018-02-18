@@ -12,28 +12,43 @@
 using namespace std;
 
 UniValue weakstats(const UniValue& params, bool fHelp) {
-    throw runtime_error("Disabled for now. FIXME\n");
-
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "weakstats\n"
-            "\nReturns weak block statistics.\n");
+            "\nReturns various weak block statistics.\n");
 
-    // FIXME: make the results nicer and more informative
     UniValue result(UniValue::VOBJ);
-/*
-    std::vector<std::pair<uint256, size_t> > wstats = weakStats();
 
-    // order by receival time
-    for (std::pair<uint256, size_t> p : wstats)
-        result.push_back(Pair(p.first.GetHex(), p.second));
+    LOCK(cs_weakblocks);
+    result.push_back(Pair("numknownweakblocks", numKnownWeakblocks()));
+    result.push_back(Pair("numknownweakblocktransactions", numKnownWeakblockTransactions()));
+    result.push_back(Pair("numweakchaintips", weakChainTips().size()));
+    result.push_back(Pair("maxweakchainheight", weakHeight(getWeakLongestChainTip())));
+    return result;
+}
 
-        return result;*/
+UniValue weakchaintips(const UniValue &params, bool fHelp) {
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "weakchaintips\n"
+            "\nGives back the current weak chain tips as pairs of (weak block hash, weak chain height), in chronological order\n");
+
+    std::vector<std::pair<uint256, size_t> > wct_heights = weakChainTips();
+    UniValue result(UniValue::VARR);
+
+    for (std::pair<uint256, size_t> p : wct_heights) {
+        UniValue entry(UniValue::VARR);
+        entry.push_back(p.first.GetHex());
+        entry.push_back(p.second);
+        result.push_back(entry);
+    }
+    return result;
 }
 
 UniValue weakconfirmations(const UniValue& params, bool fHelp)
 {
     throw runtime_error("Disabled for now. FIXME\n");
+    /*
     if (fHelp || params.size() < 1)
         throw runtime_error(
             "weakconfirmations \"hexstring\"\n"
@@ -47,7 +62,7 @@ UniValue weakconfirmations(const UniValue& params, bool fHelp)
     std::string txid_hex = params[0].get_str();
 
     uint256 hash = ParseHashV(params[0], "parameter 1");
-    //return weakConfirmations(hash);
+    //return weakConfirmations(hash); */
 }
 
 static const CRPCCommand commands[] =
@@ -55,6 +70,7 @@ static const CRPCCommand commands[] =
   //  --------------------- ------------------------  -----------------------  ----------
     { "weakblocks",         "weakconfirmations",      &weakconfirmations,      true  },
     { "weakblocks",         "weakstats",              &weakstats,   true  },
+    { "weakblocks",         "weakchaintips",          &weakchaintips, true },
 };
 
 void RegisterWeakBlockRPCCommands(CRPCTable &tableRPC)

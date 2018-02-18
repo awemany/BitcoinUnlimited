@@ -66,9 +66,10 @@ std::unordered_map<const Weakblock*, uint256> weakblock2hash;
 // map from weakblock memory location to header info
 std::unordered_map<const Weakblock*, CBlockHeader> weakblock2header;
 
-// map weak blocks to the underlying block they minimally extend (or none)
-// this, together with weak_chain_tips below, holds the weakblocks DAG
-std::unordered_map<const Weakblock*, const Weakblock*> miniextends;
+// map of weak block hashes to their underlying weak block hashes
+// This is a map of hashes to possibly allow referencing to not-yet-received
+// weakblocks in the future.
+std::map<uint256, uint256> extends;
 
 // weak/delta block chain tips
 // Ordered chronologically - a later chain tip will be further down in the vector
@@ -81,18 +82,44 @@ std::unordered_map<const Weakblock*, const CBlock*> reassembled;
 
 CCriticalSection cs_weakblocks;
 
-// Tests whether wb is extending 'underlying', which is:
-// wb strictly more transactions than underlying
-// except for coinbase (txn #0), all transactions of underlying are
-// in wb and in the same order
-// this is the transitive partial order "<" of which
-// the covering relation is the 'mini extends' one: "<:"
-bool weakExtends(const Weakblock* under, const Weakblock* wb) {
+uint256 candidateWeakHash(const CBlock& block) {
+    if (block.vtx.size()<1) return uint256();
+
+    const CTransaction& coinbase = block.vtx[0];
+
+    for (const CTxOut out : coinbase.vout) {
+        const CScript& cand = out.scriptPubKey;
+        // is it OP_RETURN, size byte (34), 'WB'+32 byte hash?
+        if (cand.size() == 36) {
+            if (cand[0] == OP_RETURN && cand[1] == 0x22 &&
+                cand[2] == 'W' && cand[3] == 'B') {
+                uint256 hash;
+                std::copy(cand.begin()+4, cand.end(), hash.begin());
+                LogPrint("weakblock", "Found candidate weak block hash %s in block %s.\n", hash.GetHex(), block.GetHash().GetHex());
+                return hash;
+            }
+        }
+    }
+    return uint256();
+}
+
+bool extendsWeak(const CBlock &block, const Weakblock* underlying) {
     AssertLockHeld(cs_weakblocks);
-    if (wb == under) return false;
-    if (wb->size() <= under->size()) return false;
-    for (size_t i=1; i < under->size(); i++)
-        if ((*wb)[i] != (*under)[i]) return false;
+    if (underlying == NULL) return false;
+    if (underlying->size() > block.vtx.size()) return false;
+    for (size_t i=1; i < underlying->size(); i++)
+        if (*(*underlying)[i] != block.vtx[i])
+            return false;
+    return true;
+}
+
+bool extendsWeak(const Weakblock *wb, const Weakblock* underlying) {
+    AssertLockHeld(cs_weakblocks);
+    if (underlying == NULL || wb == NULL) return false;
+    if (underlying->size() > wb->size()) return false;
+    for (size_t i=1; i < underlying->size(); i++)
+        if ((*underlying)[i] != (*wb)[i])
+            return false;
     return true;
 }
 
@@ -115,101 +142,34 @@ static inline CTransaction* storeTransaction(const CTransaction &otx) {
     return tx;
 }
 
-// ordering relation used for the priority queue in insertChainDAG(..)
-struct compareByHeight {
-    bool operator()(const Weakblock* left, const Weakblock* right) {
-        return weakHeight(left)<weakHeight(right);
-    }
-};
-
-static void reconnectNodes(const Weakblock* candidate, const Weakblock* wb) {
-    // Check all the blocks that miniextended candidate before.
-    // They might miniextend wb now and might need to move to larger block height.
-    // FIXME: It might make sense to create a datastructure for the inverse
-    // of miniextends to use here to make this more efficient.
-    bool buried=false;
-    for (std::pair<const Weakblock*, uint256> p : weakblock2hash) {
-        const Weakblock* t = p.first;
-
-        if ((miniextends.count(t) > 0) != (candidate == NULL)) {
-            bool attaches = candidate == NULL;
-            if (!attaches) attaches = miniextends[t] == candidate;
-            if (attaches && weakExtends(wb, t)) {
-                if (candidate == NULL)
-                    LogPrint("weakblocks", "Weakblock %s was root before before. Now is mini-extending %s.\n",
-                             weakblock2hash[t].GetHex(), weakblock2hash[wb].GetHex());
-                else
-                    LogPrint("weakblocks", "Weakblock %s mini-extended %s before. Now is mini-extending %s.\n",
-                             weakblock2hash[t].GetHex(), weakblock2hash[candidate].GetHex(), weakblock2hash[wb].GetHex());
-
-                assert (t != NULL);
-                assert (wb != NULL);
-                miniextends[t] = wb;
-                buried = true;
-            }
-        }
-    }
-    if (! buried) {
-        LogPrint("weakblocks", "Block is not buried and thus a new chain tip.\n");
-
-        auto wct_iter = find(weak_chain_tips.begin(),
-             weak_chain_tips.end(),
-             candidate);
-        if (wct_iter!= weak_chain_tips.end()) {
-            LogPrint("weakblocks", "Removing/replacing old chain tip %s.\n", weakblock2hash[candidate].GetHex());
-            weak_chain_tips.erase(wct_iter);
-        }
-        weak_chain_tips.push_back(wb);
-    }
-}
-
-// update mini_extends for a new weak block wb - which is not in the current DAG
-static void insertChainDAG(Weakblock* wb) {
-    AssertLockHeld(cs_weakblocks);
-    assert (miniextends.count(wb) == 0);
-
-    // Priority queue sorted by weakHeight - try longest chains first
-    std::priority_queue<const Weakblock*, std::vector<const Weakblock*>, compareByHeight> to_check;
-
-    for (auto tip : weak_chain_tips)
-        to_check.push(tip);
-
-    int check_iteration = 0;
-    while (to_check.size()) {
-        LogPrint("weakblocks", "Checking %d chain tips at iteration %d.\n", to_check.size(), check_iteration);
-        const Weakblock* candidate = to_check.top(); to_check.pop();
-
-        // insert next to check into queue, if available
-        if (miniextends.count(candidate))
-            to_check.push(miniextends[candidate]);
-
-        LogPrint("weakblocks", "Checking whether weakblock %s extends %s?\n", weakblock2hash[wb].GetHex(), weakblock2hash[candidate].GetHex());
-        if (weakExtends(candidate, wb)) {
-            LogPrint("weakblocks", "Weakblock %s extends %s.\n", weakblock2hash[wb].GetHex(), weakblock2hash[candidate].GetHex());
-            assert (candidate != NULL);
-            assert (wb != NULL);
-            miniextends[wb] = candidate;
-
-            reconnectNodes(candidate, wb);
-            return;
-        }
-        check_iteration++;
-    }
-    LogPrint("weakblocks", "Weakblock %s does not extend any previous weak block. Inserting as new chain tip and potentially stacking other chains on top.\n",
-             weakblock2hash[wb].GetHex());
-    reconnectNodes(NULL, wb);
-}
-
 bool storeWeakblock(const CBlock &block) {
     uint256 blockhash = block.GetHash();
     Weakblock* wb=new Weakblock();
 
-
     LOCK(cs_weakblocks);
     if (hash2weakblock.count(blockhash) > 0) {
+        LogPrint("weakblocks", "Ignoring attempt to store weak block %s twice.\n", blockhash.GetHex());
         // stored it already
         return false;
     }
+    uint256 underlyinghash = candidateWeakHash(block);
+
+    const Weakblock* underlying = NULL;
+    if (hash2weakblock.count(underlyinghash) > 0)
+        underlying = hash2weakblock[underlyinghash];
+
+    if (!underlyinghash.IsNull() && underlying == NULL) {
+        // Note: It might be possible to store dangling underlying weakblocks in the extends map and fill then in later. But this makes it necessary to have some more complex validation checks here.
+        LogPrint("weakblocks", "Weak block %s with unknown underlying block %s. Ignoring.\n", blockhash.GetHex(), underlyinghash.GetHex());
+        return false;
+    }
+
+    if (underlying != NULL && !extendsWeak(block, underlying)) {
+        LogPrint("weakblocks", "WARNING, block %s does not extend weak block %s, even though it says so!\n", blockhash.GetHex(), underlyinghash.GetHex());
+        // Won't store invalid block
+        return false;
+    }
+
     for (const CTransaction& otx : block.vtx) {
         CTransaction *tx = storeTransaction(otx);
         uint256 txhash = tx->GetHash();
@@ -221,7 +181,19 @@ bool storeWeakblock(const CBlock &block) {
     weakblock2hash[wb] = blockhash;
     weakblock2header[wb] = block;
 
-    insertChainDAG(wb);
+    if (underlying != NULL) {
+        extends[blockhash]=underlyinghash;
+        LogPrint("weakblocks", "Weakblock %s is referring to underlying weak block %s.\n", weakblock2hash[wb].GetHex(), underlyinghash.GetHex());
+
+        auto wct_iter = find(weak_chain_tips.begin(),
+                         weak_chain_tips.end(),
+                         underlying);
+        if (wct_iter != weak_chain_tips.end()) {
+            LogPrint("weakblocks", "Underlying weak block %s was chain tip before. Moving to new weakblock.\n", underlyinghash.GetHex());
+            weak_chain_tips.erase(wct_iter);
+        }
+    }
+    weak_chain_tips.push_back(wb);
     LogPrint("weakblocks", "Tracking weak block %s of %d transactions.\n", blockhash.GetHex(), wb->size());
     return true;
 }
@@ -262,17 +234,24 @@ const uint256 HashForWeak(const Weakblock *wb) {
     return weakblock2hash[wb];
 }
 
-int weakHeight(const Weakblock* wb) {
+int weakHeight(const uint256 wbhash) {
     AssertLockHeld(cs_weakblocks);
-    if (wb==NULL) {
+    if (wbhash.IsNull()) {
+        LogPrint("weakblocks", "weakHeight(0) == -1\n");
+        return -1;
+    }
+    if (extends.count(wbhash))
+        return 1+weakHeight(extends[wbhash]);
+    else
+        return 0;
+}
+
+int weakHeight(const Weakblock* wb) {
+    if (wb == NULL) {
         LogPrint("weakblocks", "weakHeight(NULL) == -1\n");
         return -1;
     }
-    //LogPrint("weakblocks", "weakHeight(..), checking: %p %s\n", wb, weakblock2hash[wb].GetHex());
-    if (miniextends.count(wb))
-        return 1+weakHeight(miniextends[wb]);
-    else
-        return 0;
+    return weakHeight(weakblock2hash[wb]);
 }
 
 const Weakblock* getWeakLongestChainTip() {
@@ -307,7 +286,7 @@ static inline void removeTransaction(const CTransaction *tx) {
 }
 
 // Forget about a weak block. Cares about the immediate indices and the transaction list
-// but NOT the DAG in mini_extends / weak_chain_tips.
+// but NOT the DAG in extends / weak_chain_tips.
 static inline void forgetWeakblock(Weakblock *wb) {
     AssertLockHeld(cs_weakblocks);
     LogPrint("weakblocks", "Removing weakblock %s.\n", weakblock2hash[wb].GetHex());
@@ -338,22 +317,27 @@ static inline void purgeChainTip(Weakblock *wb) {
     Weakblock* wb_old;
 
     do {
+        uint256 wbhash=weakblock2hash[wb];
         forgetWeakblock(wb);
         wb_old = NULL;
 
-        if (miniextends.count(wb)) {
-            wb_old = const_cast<Weakblock*>(wb);
-            wb = const_cast<Weakblock*>(miniextends[wb_old]);
-            miniextends.erase(wb_old);
+        if (extends.count(wbhash)) {
+            uint256 underlyinghash=extends[wbhash];
+            extends.erase(wbhash);
+            if (hash2weakblock.count(underlyinghash)) {
+                wb_old = const_cast<Weakblock*>(wb);
+                wb = const_cast<Weakblock*>(hash2weakblock[underlyinghash]);
 
-            // stop if any other chain depends on wb now
-            for (std::pair<const Weakblock*, uint256> p : weakblock2hash) {
-                const Weakblock* other = p.first;
-                if (miniextends.count(other)) {
-                    if (miniextends[other] == wb) {
-                        LogPrint("weakblocks", "Stopping removal at %s as it is used by other chain block %s.\n",
-                                 weakblock2hash[wb].GetHex(), weakblock2hash[other].GetHex());
-                        return;
+                // stop if any other chain depends on wb now
+                // FIXME: this might be somewhat slow?
+                for (std::pair<const Weakblock*, uint256> p : weakblock2hash) {
+                    const uint256 otherhash = p.second;
+                    if (extends.count(otherhash)) {
+                        if (extends[otherhash] == underlyinghash) {
+                            LogPrint("weakblocks", "Stopping removal at %s as it is used by other chain block %s.\n",
+                                     otherhash.GetHex(), underlyinghash.GetHex());
+                            return;
+                        }
                     }
                 }
             }
@@ -381,10 +365,16 @@ std::vector<std::pair<uint256, size_t> > weakChainTips() {
     return result;
 }
 
-const Weakblock* miniextendsWeak(const Weakblock *block) {
+const Weakblock* underlyingWeak(const Weakblock *wb) {
     AssertLockHeld(cs_weakblocks);
-    if (miniextends.count(block))
-        return miniextends[block];
+    if (wb == NULL) return NULL;
+
+    if (extends.count(weakblock2hash[wb])) {
+        uint256 underlyinghash=extends[weakblock2hash[wb]];
+        if (hash2weakblock.count(underlyinghash))
+            return hash2weakblock[underlyinghash];
+        else return NULL;
+    }
     else return NULL;
 }
 
@@ -414,12 +404,12 @@ void weakblocksConsistencyCheck() {
 
         // collect chain of blocks this one builds upon
         std::set<const Weakblock*> chain;
-        const Weakblock* extends = wb;
+        const Weakblock* node = wb;
 
-        while (miniextendsWeak(extends) != NULL) {
-            extends = miniextendsWeak(extends);
-            chain.insert(extends);
-            assert(weakExtends(extends, wb));
+        while (underlyingWeak(node) != NULL) {
+            node = underlyingWeak(node);
+            chain.insert(node);
+            assert(extendsWeak(wb, node));
         }
         LogPrint("weakblocks", "Chain size: %d, weak height: %d\n", chain.size(), weakHeight(wb));
         assert ((int)chain.size() == weakHeight(wb));
@@ -431,22 +421,19 @@ void weakblocksConsistencyCheck() {
             longest_tips.insert(wb);
             longest_height = chain.size();
         }
-
-        for (std::pair<uint256, const Weakblock*> pother : hash2weakblock) {
-            //const uint256 otherhash = pother.first;
-            const Weakblock* wother = pother.second;
-
-            LogPrint("weakblocks", "Potentially testing that %s is not underlying %s (%d).\n", weakblock2hash[wother].GetHex(), weakblock2hash[wb].GetHex(), chain.count(wother));
-            if (! chain.count(wother)) {
-                assert(!weakExtends(wother, wb));
-            }
-        }
     }
 
     if (longest_height < 0) {
         assert(getWeakLongestChainTip() == NULL);
     } else {
         assert(longest_tips.count(getWeakLongestChainTip()));
+    }
+
+    // make sure that all hashes in extends are actual, known weak blocks
+    // this requirement might be relaxed later on
+    for (std::pair<uint256, uint256> p : extends) {
+        assert (hash2weakblock.count(p.first) > 0);
+        assert (hash2weakblock.count(p.second) > 0);
     }
 }
 
@@ -458,7 +445,7 @@ void weakblocksEmptyCheck() {
     assert (hash2weakblock.size() == 0);
     assert (weakblock2hash.size() == 0);
     assert (weakblock2header.size() == 0);
-    assert (miniextends.size() == 0);
+    assert (extends.size() == 0);
     assert (weak_chain_tips.size() == 0);
     assert (reassembled.size() == 0);
 }

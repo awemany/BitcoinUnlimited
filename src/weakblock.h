@@ -11,6 +11,7 @@
 #include "primitives/block.h"
 #include "primitives/transaction.h"
 #include "sync.h"
+#include "uint256.h"
 
 const uint32_t DEFAULT_WEAKBLOCKS_CONSIDER_POW_RATIO=30;
 const bool DEFAULT_WEAKBLOCKS_ENABLE=true;
@@ -29,7 +30,15 @@ extern CCriticalSection cs_weakblocks;
 // each weak block
 typedef std::vector<CTransaction*> Weakblock;
 
-bool weakExtends(const Weakblock* under, const Weakblock* wb);
+/* From a block's coinbase transaction, extract the potential candidate hash
+   that point to the underlying weak block, as a "OP_RETURN WB <uint256>" scriptPubKey pattern. */
+uint256 candidateWeakHash(const CBlock &block);
+
+// Check whether a weak block is underlying a strong block by looking at the transaction contents
+bool extendsWeak(const CBlock &block, const Weakblock* underlying);
+
+// Check whether a weak block is underlying another weak block by looking at the transaction contents
+bool extendsWeak(const Weakblock *wb, const Weakblock* underlying);
 
 // store CBlock as a weak block return  iff the block was stored, false if it already exists
 bool storeWeakblock(const CBlock &block);
@@ -55,7 +64,8 @@ inline bool isKnownWeakblock(const uint256& hash) {
 /*! Return the weak height of a weakblock
   The height is the number of weak blocks that come before this one.
 Needs to be called with cs_weakblocks locked. */
-int weakHeight(const Weakblock*);
+int weakHeight(const uint256 wbhash);
+int weakHeight(const Weakblock* wb);
 
 /*! Return block from longest and earliest weak chain
   Can return NULL if there is no weak block chain available. */
@@ -67,9 +77,9 @@ void purgeOldWeakblocks(int leave_tips = -1);
 // return a map of weak block hashes to their weak block height, in chronological order of receival
 std::vector<std::pair<uint256, size_t> > weakChainTips();
 
-// return block minimally extending the given weak block (or NULL)
+// return block underlying the given weak block (or NULL)
 // This needs to be handled with cs_weakblocks locked
-const Weakblock* miniextendsWeak(const Weakblock *block);
+const Weakblock* underlyingWeak(const Weakblock *block);
 
 // currently known number of weak blocks
 int numKnownWeakblocks();
@@ -81,8 +91,6 @@ int numKnownWeakblockTransactions();
 /*! To be used only for testing / debugging.
   For each weak block that is registered, this checks that:
   - hash2weakblock and weakblock2hash are consistent
-  - it miniextends the block that miniextends says it does.
-  - it extends only blocks that can be reached through the miniextends DAG
 
   It also checks that getWeakLongestChainTip() is indeed pointing to one of
   the longest chains of weakblocks.

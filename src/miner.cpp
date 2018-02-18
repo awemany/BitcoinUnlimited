@@ -26,7 +26,6 @@
 #include "unlimited.h"
 #include "util.h"
 #include "utilmoneystr.h"
-#include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "weakblock.h"
 
@@ -143,6 +142,7 @@ CMutableTransaction BlockAssembler::coinbaseTx(const CScript &scriptPubKeyIn, in
     tx.vout.resize(2);
     tx.vout[0].scriptPubKey = scriptPubKeyIn;
     tx.vout[0].nValue = nValue;
+    tx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
     tx.vout[1].nValue = 0;
     tx.vout[1].scriptPubKey = CScript() << OP_RETURN;
@@ -152,8 +152,6 @@ CMutableTransaction BlockAssembler::coinbaseTx(const CScript &scriptPubKeyIn, in
     tx.vout[1].scriptPubKey.insert(tx.vout[1].scriptPubKey.end(),
                                    weakhash.begin(),
                                    weakhash.end());
-
-    tx.vin[0].scriptSig = CScript() << nHeight << OP_0;
 
     // BU005 add block size settings to the coinbase
     std::string cbmsg = FormatCoinbaseMessage(BUComments, minerComment);
@@ -432,13 +430,14 @@ void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
 
                     CAmount nValueIn = view.GetValueIn(*tx);
                     CAmount nValueOut = tx->GetValueOut();
-                    CAmount nFees = nValueIn - nValueOut;
+                    CAmount nFee = nValueIn - nValueOut;
+                    LogPrint("miner", "Rebuilding with nValueIn=%d, nValueOut=%d, nFee=%d.\n", nValueIn, nValueOut, nFee);
 
                     unsigned nSigOps = GetLegacySigOpCount(*tx);
                     nSigOps += GetP2SHSigOpCount(*tx, view);
 
                     entry = new CTxMemPoolEntry(*tx,
-                                                nFees,
+                                                nFee,
                                                 0,  // dummy insertion time
                                                 0.0, // dummy priority,
                                                 0, // dummy height,

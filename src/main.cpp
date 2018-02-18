@@ -3866,7 +3866,7 @@ static bool AcceptBlock(const CBlock &block,
                     pnode->PushMessage(NetMsgType::HEADERS, vWeakHeaders);
                 }
             }
-        } else LogPrint("weakblocks", "Received weakblock %s already. Ignoring.\n", block.GetHash().GetHex());
+        } else LogPrint("weakblocks", "Problem storing weakblock %s. Ignoring.\n", block.GetHash().GetHex());
 
         // and done - don't store this weakBlock in any of the indices etc.
         return true;

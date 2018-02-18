@@ -49,7 +49,7 @@ CThinBlock::CThinBlock(const CBlock &block, CBloomFilter &filter)
     storeWeakblock(block);
     const Weakblock *wb = getWeakblock(block.GetHash());
 
-    const Weakblock *underlying = miniextendsWeak(wb);
+    const Weakblock *underlying = underlyingWeak(wb);
 
     if (underlying != NULL) {
         uint256 weakhash = HashForWeak(underlying);
@@ -327,7 +327,7 @@ CXThinBlock::CXThinBlock(const CBlock &block, CBloomFilter *filter)
     // (mark this one as colliding to avoid it)
     {
         LOCK(cs_weakblocks);
-        this->collision = miniextendsWeak(getWeakblock(block.GetHash())) != NULL;
+        this->collision = underlyingWeak(getWeakblock(block.GetHash())) != NULL;
     }
 
     unsigned int nTx = block.vtx.size();
@@ -359,7 +359,7 @@ CXThinBlock::CXThinBlock(const CBlock &block)
     // (mark this one as colliding to avoid it)
     {
         LOCK(cs_weakblocks);
-        this->collision = miniextendsWeak(getWeakblock(block.GetHash())) != NULL;
+        this->collision = underlyingWeak(getWeakblock(block.GetHash())) != NULL;
     }
 
 

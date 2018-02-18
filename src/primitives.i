@@ -6,12 +6,14 @@
 
 %include "uint256.h"
 
+%include "amount.h"
 %include "primitives/transaction.h"
 %include "primitives/block.h"
 
 
 %{
     #include "uint256.h"
+    #include "amount.h"
     #include "primitives/transaction.h"
 %}
 

@@ -7,6 +7,12 @@
 
 %include "weakblock.h"
 %{
+#include "uint256.h"
+%}
+
+%template(Uint256Vector) std::vector<uint256>;
+
+%{
     #include "uint256.h"
 %}
 %template(WeakChainMap) std::vector<std::pair<uint256, size_t> >;

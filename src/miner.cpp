@@ -203,6 +203,7 @@ CBlockTemplate *BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, bo
 
         CBlockIndex *pindexPrev = chainActive.Tip();
         {
+            LOCK(cs_main);
             READLOCK(mempool.cs);
             nHeight = pindexPrev->nHeight + 1;
 
@@ -220,7 +221,17 @@ CBlockTemplate *BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, bo
             nLockTimeCutoff =
                 (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST) ? nMedianTimePast : pblock->GetBlockTime();
 
-            addFromLatestWeakBlock(pblocktemplate.get());
+            uint256 weakref;
+            {
+                LOCK(cs_weakblocks);
+                addFromLatestWeakBlock(pblocktemplate.get());
+                const Weakblock* weak_tip = getWeakLongestChainTip();
+
+                if (weak_tip != NULL) {
+                    weakref = HashForWeak(weak_tip);
+                }
+            }
+
             addPriorityTxs(pblocktemplate.get());
             addScoreTxs(pblocktemplate.get());
 
@@ -228,13 +239,6 @@ CBlockTemplate *BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn, bo
             nLastBlockSize = nBlockSize;
             LogPrintf("CreateNewBlock(): total size %llu txs: %llu fees: %lld sigops %u\n", nBlockSize, nBlockTx, nFees,
                 nBlockSigOps);
-
-            const Weakblock* weak_tip = getWeakLongestChainTip();
-            uint256 weakref;
-
-            if (weak_tip != NULL) {
-                weakref = HashForWeak(weak_tip);
-            }
 
             // Create coinbase transaction.
             pblock->vtx[0] =
@@ -393,7 +397,8 @@ void BlockAssembler::AddToBlock(CBlockTemplate *pblocktemplate, const CTxMemPool
     in the weakblock. */
 void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
     AssertLockHeld(mempool.cs);
-    LOCK(cs_weakblocks);
+    AssertLockHeld(cs_main);
+    AssertLockHeld(cs_weakblocks);
     if (weakblocksEnabled()) {
         const Weakblock* wb = getWeakLongestChainTip();
         if (wb == NULL) {
@@ -416,42 +421,47 @@ void BlockAssembler::addFromLatestWeakBlock(CBlockTemplate *pblocktemplate) {
             CTxMemPoolEntry* entry = NULL;
 
             if (entry_iter == mempool.mapTx.end()) {
-                if (temp_entries.find(txid) != temp_entries.end()) {
-                    LogPrint("miner", "Weak txn not in mempool: %s. Reusing from pseudo mempool cache.\n", txid.GetHex());
-                    entry = temp_entries[txid];
-                } else {
-                    LogPrint("miner", "Weak txn not in mempool: %s. (Re-)building info.\n", txid.GetHex());
-                    LOCK(cs_main);
-                    CCoinsViewCache view(pcoinsTip);
-                    // need to fill a new, temporary CTxMemPoolEntry with
-                    // correct info for fees, size and sigop count.
-                    // FIXME: some code duplication with what happens in
-                    // unlimited.cpp::ParallelAcceptToMemoryPool(..)
-
-                    CAmount nValueIn = view.GetValueIn(*tx);
-                    CAmount nValueOut = tx->GetValueOut();
-                    CAmount nFee = nValueIn - nValueOut;
-                    LogPrint("miner", "Rebuilding with nValueIn=%d, nValueOut=%d, nFee=%d.\n", nValueIn, nValueOut, nFee);
-
-                    unsigned nSigOps = GetLegacySigOpCount(*tx);
-                    nSigOps += GetP2SHSigOpCount(*tx, view);
-
-                    entry = new CTxMemPoolEntry(*tx,
-                                                nFee,
-                                                0,  // dummy insertion time
-                                                0.0, // dummy priority,
-                                                0, // dummy height,
-                                                false, // dummy poolHasNoInputsOf,
-                                                CAmount(0), // dummy inChainInputValue
-                                                false, // dummy spendsCoinbase
-                                                nSigOps,
-                                                LockPoints() // dummy lock points
-                        );
-                    temp_entries[txid] = entry;
+                CValidationState state;
+                // FIXME: figure out mempool locking scheme. Write lock
+                // does not seem to be necessary when looking at the rest of the
+                // code?!
+                //WRITELOCK(mempool.cs);
+                std::vector<COutPoint> vCoinsToUncache_dummy;
+                {
+                    {
+                        // FIXME: use reverselock here, even better, fix the damn race
+                        mempool.cs.unlock_shared();
+                        if (!ParallelAcceptToMemoryPool(txHandlerSnap,
+                                                        mempool,
+                                                        state,
+                                                        *tx,
+                                                        false, // fLimitFree,
+                                                        NULL, // pfMissingInputs
+                                                        true, // fOverrideMempoolLimit
+                                                        false, //fRejectAbsurdFee
+                                                        vCoinsToUncache_dummy)) {
+                            if (state.GetRejectCode() == REJECT_DUPLICATE) {
+                                LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM Missing weak block txn %s already in mempool?!\n", tx->GetHash().GetHex());
+                            } else {
+                                LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM Could not insert missing weak block txn %s into mempool. Reason: %s\n", tx->GetHash().GetHex(), state.GetRejectReason().c_str());
+                            }
+                            mempool.cs.lock_shared();
+                            continue;
+                        }
+                        mempool.cs.lock_shared();
+                    }
                 }
-            } else {
-                entry = const_cast<CTxMemPoolEntry*>(&*entry_iter);
+                LogPrint("miner", "Injected missing weak block txn %s into mempool.\n", tx->GetHash().GetHex());
+                entry_iter = mempool.mapTx.find(txid);
+                if (entry_iter == mempool.mapTx.end()) {
+                    // FIXME: There's a slight potential for a race here where transactions get evicted from mempool right before reaching here and this
+                    // weakblock construction fails.
+                    LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM Txn %s not appearing in mempool after (re-)insertion?!%s\n", tx->GetHash().GetHex());
+                    continue;
+                }
             }
+
+            entry = const_cast<CTxMemPoolEntry*>(&*entry_iter);
 
             if (inBlock.count(entry->GetTx().GetHash())) {
                 LogPrint("miner", "UNEXPECTED INTERNAL PROBLEM, weak txn already in block template: %s.\n", txid.GetHex());

@@ -464,84 +464,7 @@ libbitcoinconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
 endif
 
-%_wrap.cxx %.py: %.i defaults.i $(BITCOIN_CORE_H)
-	$(SWIG) -python $(AX_SWIG_PYTHON_CPPFLAGS) $<
 
-
-if ENABLE_BITCOINPY
-
-# libbitcoinpy: compiled with -fPIC to allow pulling into a shared library
-noinst_LIBRARIES = libbitcoinpy.a
-
-#libbitcoinpy_a_LDFLAGS = -g -fPIC -shared $(PYTHON_EXTRA_LDFLAGS) $(AM_LDFLAGS) $(RELDFLAGS)
-libbitcoinpy_a_SOURCES = $(libbitcoin_common_a_SOURCES)
-libbitcoinpy_a_SOURCES += $(libbitcoin_consensus_a_SOURCES)
-libbitcoinpy_a_SOURCES += $(libbitcoin_wallet_a_SOURCES)
-libbitcoinpy_a_SOURCES += $(libbitcoin_server_a_SOURCES)
-libbitcoinpy_a_SOURCES += $(libbitcoin_util_a_SOURCES)
-libbitcoinpy_a_SOURCES += $(crypto_libbitcoin_crypto_a_SOURCES)
-libbitcoinpy_a_CPPFLAGS = $(AM_CPPFLAGS) $(PYTHON_CPPFLAGS) $(libbitcoin_server_a_CPPFLAGS)
-libbitcoinpy_a_CXXFLAGS = $(AM_CPPFLAGS) -fPIC $(PYTHON_CPPFLAGS) $(BITCOIN_INCLUDES)
-
-bitcoinpy_PYTHON_SHARED = _coreio.so _script.so _primitives.so _util.so _weakblock.so
-bitcoinpy_PYTHON_GENERATED = coreio.py script.py primitives.py util.py weakblock.py
-bitcoinpy_PYTHON_PYC = $(bitcoinpy_PYTHON_GENERATED:.py=.pyc)
-
-noinst_PROGRAMS += $(bitcoinpy_PYTHON_SHARED)
-
-libbitcoinpy.so: libbitcoinpy.a $(libbitcoinpy_a_OBJECTS)
-	$(CXX) -shared $^ -o $@
-
-PYTHON_MODULE_LINK_OPTIONS=\
-	$(libbitcoinpy_a_LDFLAGS) \
-	-fPIC -shared $(AM_LDFLAGS) $(PYTHON_EXTRA_LDFLAGS) $(RELDFLAGS) $(LIBTOOL_APP_LDFLAGS) \
-	libbitcoinpy.so \
-	./univalue/.libs/libunivalue.a \
-	./secp256k1/.libs/libsecp256k1.a \
-	./leveldb/libleveldb.a \
-	./leveldb/libleveldb_sse42.a \
-	leveldb/libmemenv.a \
-	$(PYTHON_LIBS) $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) -lpthread -lanl
-
-PYTHON_MODULE_CPPFLAGS = $(AM_CPPFLAGS) $(PYTHON_CPPFLAGS) $(libbitcoin_server_a_CPPFLAGS)
-PYTHON_MODULE_CXXFLAGS = -fPIC $(PYTHON_CPPFLAGS) $(AM_CPPFLAGS)
-PYTHON_MODULE_DEPS     = libbitcoinpy.so $(LIBUNIVALUE) $(LIBSECP256K1) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV)
-
-_coreio_so_SOURCES = coreio_wrap.cxx
-_coreio_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
-_coreio_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
-_coreio.so$(EXEEXT): $(_coreio_so_OBJECTS) $(PYTHON_MODULE_DEPS)
-	$(CXX) -o $@ $(_coreio_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
-
-_script_so_SOURCES = script_wrap.cxx
-_script_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
-_script_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
-_script.so$(EXEEXT): $(_script_so_OBJECTS) $(PYTHON_MODULE_DEPS)
-	$(CXX) -o $@ $(_script_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
-
-_primitives_so_SOURCES = primitives_wrap.cxx
-_primitives_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
-_primitives_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
-_primitives.so$(EXEEXT): $(_primitives_so_OBJECTS) $(PYTHON_MODULE_DEPS)
-	$(CXX) -o $@ $(_primitives_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
-
-_util_so_SOURCES = util_wrap.cxx
-_util_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
-_util_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
-_util.so$(EXEEXT): $(_util_so_OBJECTS) $(PYTHON_MODULE_DEPS)
-	$(CXX) -o $@ $(_util_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
-
-_weakblock_so_SOURCES = weakblock_wrap.cxx
-_weakblock_so_CPPFLAGS = $(PYTHON_MODULE_CPPFLAGS)
-_weakblock_so_CXXFLAGS = $(PYTHON_MODULE_CXXFLAGS)
-_weakblock.so$(EXEEXT): $(_weakblock_so_OBJECTS) $(PYTHON_MODULE_DEPS)
-	$(CXX) -o $@ $(_weakblock_so_OBJECTS) $(PYTHON_MODULE_LINK_OPTIONS)
-
-python-modules: $(bitcoinpy_PYTHON_SHARED)
-
-endif
-
-#
 CLEANFILES = $(EXTRA_LIBRARIES)
 
 CTAES_DIST =  crypto/ctaes/bench.c
@@ -550,8 +473,6 @@ CTAES_DIST += crypto/ctaes/ctaes.h
 CTAES_DIST += crypto/ctaes/README.md
 CTAES_DIST += crypto/ctaes/test.c
 
-CLEANFILES += $(bitcoinpy_PYTHON_SHARED) $(bitcoinpy_PYTHON_GENERATED) $(bitcoinpy_PYTHON_PYC) libbitcoinpy.so
-CLEANFILES += *_wrap.cxx
 CLEANFILES += *.gcda *.gcno
 CLEANFILES += compat/*.gcda compat/*.gcno
 CLEANFILES += consensus/*.gcda consensus/*.gcno

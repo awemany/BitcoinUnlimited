@@ -71,11 +71,13 @@ int weakHeight(const Weakblock* wb);
   Can return NULL if there is no weak block chain available. */
 const Weakblock* getWeakLongestChainTip();
 
-// remove old weak blocks after a while and leave only the given number of chaintips (default is used if -1 is given)
-void purgeOldWeakblocks(int leave_tips = -1);
+// Remove old weak blocks
+// This removes those chain tip that have been marked for removal in the last round
+// and marks the current one for removal in the next round.
+void purgeOldWeakblocks();
 
 // return a map of weak block hashes to their weak block height, in chronological order of receival
-std::vector<std::pair<uint256, size_t> > weakChainTips();
+std::vector<std::pair<uint256, int> > weakChainTips();
 
 // return block underlying the given weak block (or NULL)
 // This needs to be handled with cs_weakblocks locked

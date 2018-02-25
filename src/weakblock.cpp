@@ -1,5 +1,6 @@
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <queue>
 #include "sync.h"
 #include "weakblock.h"
@@ -14,10 +15,6 @@
 // BU tweaks enable and config for weak blocks
 extern CTweak<uint32_t> wbConsiderPOWratio;
 extern CTweak<uint32_t> wbEnable;
-
-
-// number of latest chain tips to keep after each purge
-const int keep_chain_tips = 5;
 
 bool weakblocksEnabled() {
     LOCK(cs_weakblocks);
@@ -79,6 +76,12 @@ std::vector<const Weakblock*> weak_chain_tips;
 
 // Cache of blocks reassembled from weakblocks
 std::unordered_map<const Weakblock*, const CBlock*> reassembled;
+
+// weak chain tips to remove next round
+// The weak blocks that are listed here can still be referenced for efficient
+// delta transmission but will not be considered as active chain tips otherwise.
+std::unordered_set<const Weakblock*> to_remove;
+
 
 CCriticalSection cs_weakblocks;
 
@@ -240,10 +243,18 @@ int weakHeight(const uint256 wbhash) {
         LogPrint("weakblocks", "weakHeight(0) == -1\n");
         return -1;
     }
-    if (extends.count(wbhash))
-        return 1+weakHeight(extends[wbhash]);
-    else
-        return 0;
+    if (to_remove.count(hash2weakblock[wbhash])) {
+        //LogPrint("weakblocks", "weakHeight(%s) == -1 (block marked for removal)\n", wbhash.GetHex());
+        return -1;
+    }
+
+    if (extends.count(wbhash)) {
+        int prev_height = weakHeight(extends[wbhash]);
+        if (prev_height >=0)
+            return 1+prev_height;
+        else
+            return -1;
+    } else return 0;
 }
 
 int weakHeight(const Weakblock* wb) {
@@ -346,21 +357,24 @@ static inline void purgeChainTip(Weakblock *wb) {
     LogPrint("weakblocks", "Purge finished, reached bottom of chain.\n");
 }
 
-void purgeOldWeakblocks(int leave_tips) {
+void purgeOldWeakblocks() {
     LOCK(cs_weakblocks);
     LogPrint("weakblocks", "Purging old chain tips. %d chain tips right now.\n", weak_chain_tips.size());
-
-    if (leave_tips<0) leave_tips = keep_chain_tips;
-    while ((int)weak_chain_tips.size() > leave_tips) {
-        purgeChainTip(const_cast<Weakblock*>(weak_chain_tips[0]));
+    for (const Weakblock* wb : weak_chain_tips) {
+        if (to_remove.count(wb)) {
+            purgeChainTip(const_cast<Weakblock*>(wb));
+            to_remove.erase(wb);
+        } else {
+            to_remove.insert(wb);
+        }
     }
 }
 
-std::vector<std::pair<uint256, size_t> > weakChainTips() {
+std::vector<std::pair<uint256, int> > weakChainTips() {
     LOCK(cs_weakblocks);
-    std::vector<std::pair<uint256, size_t> > result;
+    std::vector<std::pair<uint256, int> > result;
     for (const Weakblock* wb : weak_chain_tips)
-        result.push_back(std::pair<uint256, size_t>(weakblock2hash[wb],
+        result.push_back(std::pair<uint256, int>(weakblock2hash[wb],
                                                     weakHeight(wb)));
     return result;
 }

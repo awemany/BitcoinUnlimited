@@ -33,10 +33,10 @@ UniValue weakchaintips(const UniValue &params, bool fHelp) {
             "weakchaintips\n"
             "\nGives back the current weak chain tips as pairs of (weak block hash, weak chain height), in chronological order\n");
 
-    std::vector<std::pair<uint256, size_t> > wct_heights = weakChainTips();
+    std::vector<std::pair<uint256, int> > wct_heights = weakChainTips();
     UniValue result(UniValue::VARR);
 
-    for (std::pair<uint256, size_t> p : wct_heights) {
+    for (std::pair<uint256, int> p : wct_heights) {
         UniValue entry(UniValue::VARR);
         entry.push_back(p.first.GetHex());
         entry.push_back(p.second);

@@ -329,11 +329,6 @@ static inline void forgetWeakblock(Weakblock *wb) {
 static inline void purgeChainTip(Weakblock *wb) {
     AssertLockHeld(cs_weakblocks);
     LogPrint("weakblocks", "Purging weak block %s, which is currently a chain tip.\n", weakblock2hash[wb].GetHex());
-    auto wct_iter = find(weak_chain_tips.begin(),
-                         weak_chain_tips.end(),
-                         wb);
-    assert(wct_iter != weak_chain_tips.end());
-    weak_chain_tips.erase(wct_iter);
 
     Weakblock* wb_old;
 
@@ -370,14 +365,18 @@ static inline void purgeChainTip(Weakblock *wb) {
 void purgeOldWeakblocks() {
     LOCK(cs_weakblocks);
     LogPrint("weakblocks", "Purging old chain tips. %d chain tips right now.\n", weak_chain_tips.size());
+
+    std::vector<const Weakblock*> new_weak_chain_tips;
     for (const Weakblock* wb : weak_chain_tips) {
         if (to_remove.count(wb)) {
             purgeChainTip(const_cast<Weakblock*>(wb));
             to_remove.erase(wb);
         } else {
             to_remove.insert(wb);
+            new_weak_chain_tips.push_back(wb);
         }
     }
+    weak_chain_tips = new_weak_chain_tips;
 }
 
 std::vector<std::pair<uint256, int> > weakChainTips() {

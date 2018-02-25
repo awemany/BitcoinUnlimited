@@ -161,6 +161,7 @@ bool storeWeakblock(const CBlock &block) {
     if (hash2weakblock.count(underlyinghash) > 0)
         underlying = hash2weakblock[underlyinghash];
 
+#if 0
     if (!underlyinghash.IsNull() && underlying == NULL) {
         // Note: It might be possible to store dangling underlying weakblocks in the extends map and fill then in later. But this makes it necessary to have some more complex validation checks here.
         LogPrint("weakblocks", "Weak block %s with unknown underlying block %s. Ignoring.\n", blockhash.GetHex(), underlyinghash.GetHex());
@@ -172,6 +173,15 @@ bool storeWeakblock(const CBlock &block) {
         // Won't store invalid block
         return false;
     }
+#else
+    if (!underlyinghash.IsNull() && underlying == NULL) {
+        LogPrint("weakblocks", "Weak block %s with unknown underlying block %s. Assuming start of new chain.\n", blockhash.GetHex(), underlyinghash.GetHex());
+    } else if (underlying != NULL && !extendsWeak(block, underlying)) {
+        LogPrint("weakblocks", "WARNING, block %s does not extend weak block %s, even though it says so! Assuming start of new chain.\n", blockhash.GetHex(), underlyinghash.GetHex());
+        underlying = NULL;
+    }
+
+#endif
 
     for (const CTransaction& otx : block.vtx) {
         CTransaction *tx = storeTransaction(otx);

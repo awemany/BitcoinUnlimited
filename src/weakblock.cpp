@@ -98,7 +98,7 @@ uint256 candidateWeakHash(const CBlock& block) {
                 cand[2] == 'W' && cand[3] == 'B') {
                 uint256 hash;
                 std::copy(cand.begin()+4, cand.end(), hash.begin());
-                LogPrint("weakblock", "Found candidate weak block hash %s in block %s.\n", hash.GetHex(), block.GetHash().GetHex());
+                LogPrint("weakblocks", "Found candidate weak block hash %s in block %s.\n", hash.GetHex(), block.GetHash().GetHex());
                 return hash;
             }
         }

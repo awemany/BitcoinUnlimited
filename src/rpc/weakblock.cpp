@@ -45,6 +45,21 @@ UniValue weakchaintips(const UniValue &params, bool fHelp) {
     return result;
 }
 
+UniValue weaktiptxcount(const UniValue& params, bool fHelp) {
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "weaktiptxcount\n"
+            "\nGives the number of transactions in the longest weak chain tip. Returns -1 if no weak chain tip is available.\n");
+
+    LOCK(cs_weakblocks);
+    const Weakblock* wbtip = getWeakLongestChainTip();
+    if (wbtip == NULL)
+        return -1;
+    else {
+        return wbtip->size();
+    }
+}
+
 UniValue weakconfirmations(const UniValue& params, bool fHelp)
 {
     throw runtime_error("Disabled for now. FIXME\n");
@@ -71,6 +86,7 @@ static const CRPCCommand commands[] =
     { "weakblocks",         "weakconfirmations",      &weakconfirmations,      true  },
     { "weakblocks",         "weakstats",              &weakstats,   true  },
     { "weakblocks",         "weakchaintips",          &weakchaintips, true },
+    { "weakblocks",         "weaktiptxcount",         &weaktiptxcount, true },
 };
 
 void RegisterWeakBlockRPCCommands(CRPCTable &tableRPC)

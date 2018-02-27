@@ -13,7 +13,7 @@
 #include "sync.h"
 #include "uint256.h"
 
-const uint32_t DEFAULT_WEAKBLOCKS_CONSIDER_POW_RATIO=30;
+const uint32_t DEFAULT_WEAKBLOCKS_CONSIDER_POW_RATIO=4;
 const bool DEFAULT_WEAKBLOCKS_ENABLE=true;
 
 bool weakblocksEnabled();

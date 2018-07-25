@@ -1517,7 +1517,7 @@ bool CheckBlock(const CBlock &block, CValidationState &state, bool fCheckPOW, bo
     for (const auto &tx : block.vtx)
     {
         nTx++;
-        nSigOps += GetLegacySigOpCount(*tx);
+        nSigOps += GetLegacySigOpCount(*tx, STANDARD_CHECKDATASIG_VERIFY_FLAGS);
         uint64_t nTxSize = ::GetSerializeSize(*tx, SER_NETWORK, PROTOCOL_VERSION);
         if (nTxSize > nLargestTx)
             nLargestTx = nTxSize;
@@ -2033,7 +2033,7 @@ bool ConnectBlockDependencyOrdering(const CBlock &block,
             const CTransaction &tx = *(block.vtx[i]);
 
             nInputs += tx.vin.size();
-            nSigOps += GetLegacySigOpCount(tx);
+            nSigOps += GetLegacySigOpCount(tx, STANDARD_CHECKDATASIG_VERIFY_FLAGS);
             // if (nSigOps > MAX_BLOCK_SIGOPS)
             //    return state.DoS(100, error("ConnectBlock(): too many sigops"),
             //                    REJECT_INVALID, "bad-blk-sigops");
@@ -2077,7 +2077,7 @@ bool ConnectBlockDependencyOrdering(const CBlock &block,
                     // Add in sigops done by pay-to-script-hash inputs;
                     // this is to prevent a "rogue miner" from creating
                     // an incredibly-expensive-to-validate block.
-                    nSigOps += GetP2SHSigOpCount(tx, view);
+                    nSigOps += GetP2SHSigOpCount(tx, view, STANDARD_CHECKDATASIG_VERIFY_FLAGS);
                     // if (nSigOps > MAX_BLOCK_SIGOPS)
                     //    return state.DoS(100, error("ConnectBlock(): too many sigops"),
                     //                     REJECT_INVALID, "bad-blk-sigops");
@@ -2274,7 +2274,7 @@ bool ConnectBlockCanonicalOrdering(const CBlock &block,
             const CTransaction &tx = *(block.vtx[i]);
 
             nInputs += tx.vin.size();
-            nSigOps += GetLegacySigOpCount(tx);
+            nSigOps += GetLegacySigOpCount(tx, STANDARD_CHECKDATASIG_VERIFY_FLAGS);
 
             if (!tx.IsCoinBase())
             {
@@ -2316,7 +2316,7 @@ bool ConnectBlockCanonicalOrdering(const CBlock &block,
                     // Add in sigops done by pay-to-script-hash inputs;
                     // this is to prevent a "rogue miner" from creating
                     // an incredibly-expensive-to-validate block.
-                    nSigOps += GetP2SHSigOpCount(tx, view);
+                    nSigOps += GetP2SHSigOpCount(tx, view, STANDARD_CHECKDATASIG_VERIFY_FLAGS);
                     // if (nSigOps > MAX_BLOCK_SIGOPS)
                     //    return state.DoS(100, error("ConnectBlock(): too many sigops"),
                     //                     REJECT_INVALID, "bad-blk-sigops");

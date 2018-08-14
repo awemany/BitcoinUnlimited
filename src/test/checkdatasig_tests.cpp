@@ -105,9 +105,10 @@ BOOST_AUTO_TEST_CASE(checkdatasig_test) {
     // Check various pubkey encoding.
     const valtype message{};
 
-    CHashWriter ss(SER_GETHASH, 0);
-    ss << message;
-    uint256 messageHash = ss.GetHash();
+    CSHA256 hasher;
+    uint256 messageHash;
+    hasher.Write(message.data(), message.size());
+    hasher.Finalize((uint8_t*) &messageHash);
 
     KeyData kd;
     valtype pubkey = ToByteVector(kd.pubkey);

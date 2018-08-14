@@ -344,10 +344,12 @@ public:
 
     TestBuilder &PushDataSig(const CKey &key, const std::vector<uint8_t> &data,
                              unsigned int lenR = 32, unsigned int lenS = 32) {
-        CHashWriter ss(SER_GETHASH, 0);
-        ss << data;
+        CSHA256 hasher;
+        hasher.Write(data.data(), data.size());
+        uint256 msghash;
+        hasher.Finalize((uint8_t*) &msghash);
 
-        DoPush(DoSign(key, ss.GetHash(), lenR, lenS));
+        DoPush(DoSign(key, msghash, lenR, lenS));
         return *this;
     }
 

@@ -937,11 +937,16 @@ bool EvalScript(std::vector<valtype> &stack, const CScript &script,
 
                         bool fSuccess = false;
                         if (vchSig.size()) {
-                            CHashWriter ss(SER_GETHASH, 0);
-                            ss << vchMessage;
-                            uint256 message = ss.GetHash();
+                            // Note: the message is hashed *raw* here, as to allow
+                            // use cases where the hash of some data is to be checked
+                            // that does not follow the SER_HASH convention of serializing
+                            // with a length marker.
+                            CSHA256 msghasher;
+                            uint256 msghash;
+                            msghasher.Write(vchMessage.data(), vchMessage.size());
+                            msghasher.Finalize((uint8_t*) &msghash);
                             CPubKey pubkey(vchPubKey);
-                            fSuccess = pubkey.Verify(message, vchSig);
+                            fSuccess = pubkey.Verify(msghash, vchSig);
                         }
 
                         if (!fSuccess && (flags & SCRIPT_VERIFY_NULLFAIL) &&

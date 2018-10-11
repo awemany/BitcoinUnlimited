@@ -5,6 +5,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "interpreter.h"
+#include "util.h"
 
 #include "crypto/ripemd160.h"
 #include "crypto/sha1.h"
@@ -1436,11 +1437,15 @@ bool EvalScript(vector<vector<unsigned char> > &stack,
                 {
                     // Make sure this remains an error before activation.
                     if (!(flags & SCRIPT_ENABLE_CHECKDATASIG))
+                    {
+                        LOGA("CHECKDATASIG: Encountered invalid opcode.\n");
                         return set_error(serror, SCRIPT_ERR_BAD_OPCODE);
+                    }
 
                     // (sig message pubkey -- bool)
                     if (stack.size() < 3)
                     {
+                        LOGA("CHECKDATASIG: Encountered invalid number of stack items.\n");
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
                     }
 
@@ -1451,6 +1456,7 @@ bool EvalScript(vector<vector<unsigned char> > &stack,
                     if (!CheckDataSignatureEncoding(vchSig, flags, serror) ||
                         !CheckPubKeyEncoding(vchPubKey, flags, serror))
                     {
+                        LOGA("CHECKDATASIG: Encountered invalid data or pubkey encoding.\n");
                         // serror is set
                         return false;
                     }
@@ -1465,9 +1471,11 @@ bool EvalScript(vector<vector<unsigned char> > &stack,
                         CPubKey pubkey(vchPubKey);
                         fSuccess = pubkey.Verify(messagehash, vchSig);
                     }
+                    LOGA("CHECKDATASIG: Ran signature verification, result=%d.\n", (int)fSuccess);
 
                     if (!fSuccess && (flags & SCRIPT_VERIFY_NULLFAIL) && vchSig.size())
                     {
+                        LOGA("CHECKDATASIG: Returning with NULLFAIL error\n");
                         return set_error(serror, SCRIPT_ERR_SIG_NULLFAIL);
                     }
 
@@ -1477,6 +1485,7 @@ bool EvalScript(vector<vector<unsigned char> > &stack,
                     stack.push_back(fSuccess ? vchTrue : vchFalse);
                     if (opcode == OP_CHECKDATASIGVERIFY)
                     {
+                        LOGA("CHECKDATASIG: VERIFY variant.\n");
                         if (fSuccess)
                         {
                             popstack(stack);

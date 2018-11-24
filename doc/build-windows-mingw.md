@@ -1,7 +1,7 @@
 Building Bitcoin on Native Windows
 ==================================
 
-This document describes the installation of the mysys and mingw tools as well as
+This document describes the installation of the `msys` and `mingw` tools as well as
 the build dependencies and then finally the compilation of the Bitcoin binaries.
 
 NOTE: These instructions will allow you to build bitcoin as either 32-bit or 64-bit.
@@ -22,8 +22,9 @@ here [build-aux/mingw/readme.md](/build-aux/mingw/readme.md)
 Prepare your build system
 -------------------------
 
-1.1 Install msys shell:
+1.1 Install `msys` shell:
 http://sourceforge.net/projects/mingw/files/Installer/mingw-get-setup.exe/download
+
 From MinGW installation manager -> All packages -> MSYS
 mark the following for installation:
 
@@ -40,30 +41,31 @@ then click on Installation -> Apply changes
 1.2 Install MinGW-builds project toolchain:
 For 32-bit download:
 http://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win32/Personal%20Builds/mingw-builds/4.9.2/threads-posix/dwarf/i686-4.9.2-release-posix-dwarf-rt_v3-rev1.7z/download
-and unpack it to C:\
+and unpack it to `C:\`
 
 For 64-bit download:
 http://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win64/Personal%20Builds/mingw-builds/4.9.2/threads-posix/seh/x86_64-4.9.2-release-posix-seh-rt_v3-rev1.7z/download
-and unpack it to C:\
+and unpack it to `C:\`
 
 1.3. Ensure that the desired toolchain's bin folder is set in your PATH environment variable. This will control which toolchain, 32-bit or 64-bit, is used for building.  On Windows 7 your path should look something like:
 
 For 32-bit builds:
-C:\mingw32\bin;%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\
+`C:\mingw32\bin;%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\`
 
 For 64-bit builds:
-C:\mingw64\bin;%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\
+`C:\mingw64\bin;%SystemRoot%\system32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\`
 
-IMPORTANT: It is fine to have both the 32-bit and 64-bit toolchains installed at the same time, however you should only have one in your PATH variable at a time.  If you place both in your PATH, then the build will be made with whichever toolchain path that is listed first.
+**Important**: It is fine to have both the 32-bit and 64-bit toolchains installed at the same time, however you should only have one in your PATH variable at a time.  If you place both in your PATH, then the build will be made with whichever toolchain path that is listed first.
 
-NOTE: If you install both toolchains, when you switch between them remember that you need to rebuild all of the dependencies with the same toolchain as you are building the bitcoin client, otherwise linking will fail if you try to mix 32-bit and 64-bit binaries.
+**Note**: If you install both toolchains, when you switch between them remember that you need to rebuild all of the dependencies with the same toolchain as you are building the bitcoin client, otherwise linking will fail if you try to mix 32-bit and 64-bit binaries.
 
 
 1.4 Additional checks:
-C:\MinGW\bin should contain nothing but mingw-get.exe.
+`C:\MinGW\bin` should contain nothing but `mingw-get.exe1.
 
-Create a shortcut to C:\MinGw\msys\1.0\msys.bat on your desktop.
-Double-click on the shortcut to start a msys shell.
+Create a shortcut to `C:\MinGw\msys\1.0\msys.bat` on your desktop.
+Double-click on the shortcut to start a msys shell. Alternative, install
+`msys-bash`, type `lnk` which seems to do the same.
 
 For the 32-bit toolchain your gcc -v output should be:
 ```
@@ -91,13 +93,13 @@ gcc version 4.9.2 (x86_64-posix-seh-rev1, Built by MinGW-W64 project)
 ```
 
 2. Download, unpack and build required dependencies.
-Save them in c:\deps folder.
+Save them in `c:\deps` folder.
 
 2.1 OpenSSL: http://www.openssl.org/source/openssl-1.0.1k.tar.gz
-From a MinGw shell (C:\MinGW\msys\1.0\msys.bat), unpack the source archive with tar (this will avoid symlink issues)
+From a MinGw shell (`C:\MinGW\msys\1.0\msys.bat`), unpack the source archive with `tar` (this will avoid symlink issues)
 then configure and make:
 
-NOTE: For 64-bit builds, when you run the ./configure command below, you must change mingw to mingw64.
+NOTE: For 64-bit builds, when you run the `./configure` command below, you must change  mingw` to `mingw64`.
 
 ```
 cd /c/deps/
@@ -132,20 +134,18 @@ bootstrap.bat gcc
 b2 --build-type=complete --with-chrono --with-filesystem --with-program_options --with-system --with-thread toolset=gcc variant=release link=static threading=multi runtime-link=static stage
 ```
 
-This will compile the required boost libraries and put them into the stage folder (C:\deps\boost_1_61_0\stage).
+This will compile the required boost libraries and put them into the stage folder (`C:\deps\boost_1_61_0\stage`).
 NOTE: make sure you don't use tarballs, as Unix EOL markers can break batch files.
 
 
 2.3.1  Libevent 2.0.22: https://sourceforge.net/projects/levent/files/release-2.0.22-stable/libevent-2.0.22-stable.tar.gz/download
-Download and unpack, then run from the mysys shell:
+Download and unpack, then run from the msys shell:
 
 ```
 tar -xvfz libevent-2.0.22-stable.tar.gz
 mv ./libevent-2.0.22-stable ./libevent-2.0.22
 cd libevent-2.0.22
-
 ./configure --disable-shared
-
 make
 ```
 
@@ -231,31 +231,31 @@ qmake qttools.pro
 mingw32-make -j4
 ```
 
-NOTE: consider using -j switch with mingw32-make to speed up compilation process. On a quad core -j4 or -j5 should give the best results.
+NOTE: consider using `-j` switch with `mingw32-make` to speed up compilation process. On a quad core `-j4` or `-j5` should give the best results.
 
 
 then
 
-make a BOOST_ROOT environment variable.  best to place it in your mysys.bat file which should
+make a `BOOST_ROOT` environment variable.  best to place it in your `msys.bat` file which should
 be on your desktop now.  that way it's there whenever you start up the shell.
-Enter the following in the mysys shell or add it to the top (after the comment section) of the mysys.bat file.
+Enter the following in the msys shell or add it to the top (after the comment section) of the `msys.bat` file.
 
 ```
 set BOOST_ROOT=/c/deps/boost_1_61_0
 ```
 
 
-Build bitcoin
+Build Bitcoin
 -------------
 
-From the mysys shell prompt cd to the root of the source code directory
+From the `msys` shell prompt `cd` to the root of the source code directory
 and type the following command (for example, cd c:/bitcoin and NOT c:/bitcoin/src):
 
 ```
 ./autogen.sh
 ```
 
-Once autogen completes, from the mysys shell prompt enter the following:
+Once autogen completes, from the msys shell prompt enter the following:
 
 ```
 CPPFLAGS="-I/c/deps/db-4.8.30.NC/build_unix \
@@ -284,7 +284,7 @@ BOOST_ROOT=/c/deps/boost_1_61_0 \
 ```
 
 After the configure script finishes it's finally time to compile.
-From the msys shell prompt enter the following (this is the same for both 32-bit and 64-bit):
+From the `msys` shell prompt enter the following (this is the same for both 32-bit and 64-bit):
 
 ```
 make -j4
@@ -293,7 +293,9 @@ make -j4
 NOTE: `j` is followed by the number of cores your machine has, so two core would be -j2 etc..
 
 
-Finally you can strip the executables if you wish.  Stripping will remove debug symbols and greatly reduce the final file size of the executables.  For example, the v12.1 bitcoin-qt.exe will go from ~241MB to ~26MB.
+Finally you can strip the executables if you wish.  Stripping will remove
+debug symbols and greatly reduce the final file size of the executables.  For
+example, the v12.1 bitcoin-qt.exe will go from ~241MB to ~26MB.
 
 ```
 strip src/bitcoin-tx.exe
